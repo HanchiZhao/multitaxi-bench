@@ -1,68 +1,79 @@
-r"""
-Route / opportunity environment for the revised single-driver taxi-zone project.
+"""Build the 15-minute dynamic taxi environment for two-hour operations.
 
-This version stabilizes the environment around three layers from the uploaded notes:
-
-Stage 1. Static graph algorithms
-    - Dijkstra shortest-time / shortest-distance search
-    - A* shortest-time / shortest-distance search with geographic heuristic
-    - Yen-style k-shortest simple paths through NetworkX shortest_simple_paths
-    - Utility-based candidate path ranking without using negative utility as graph cost
-
-Stage 2. Offline dynamic policy baselines
-    - Finite-horizon value iteration on discrete states (zone, time_bin)
-    - Tabular Q-learning with epsilon-greedy exploration
-
-Stage 3. DQN preparation
-    - A stable exporter for state/action/reward transition records.
-      Full neural DQN training is intentionally kept outside this file because it
-      requires PyTorch and careful tuning.
-
-Stage 4. Shapley preparation
-    - Candidate opportunity nodes
-    - Candidate path pool with path masks and route utility
-    - These are the inputs needed by a later Shapley module.
-
-Data required in data/:
-- taxi_zones.shp/.shx/.dbf/.prj/.cpg
-- taxi_zone_lookup.csv
-- yellow_tripdata_2025-01.parquet ... yellow_tripdata_2025-06.parquet
+Required data files:
+- data/taxi_zones.shp (+ .shx/.dbf/.prj/.cpg)
+- data/taxi_zone_lookup.csv
+- data/yellow_tripdata_2025-01.parquet ... 2025-06.parquet
 
 Run from project root:
     python scripts/route_environment.py
 """
-
 from __future__ import annotations
 
+import argparse
 import math
-import os
 import pickle
-import random
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from collections import defaultdict
+from dataclasses import asdict
+from pathlib import Path
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import geopandas as gpd
-import networkx as nx
 import numpy as np
 import pandas as pd
-from shapely.geometry import LineString, Point
 
+from config import (
+    ADJACENCY_BUFFER_FEET,
+    DATA_DIR,
+    AIRPORT_QUEUE_MULTIPLIER,
+    COMPETITION_SCENARIO_MULTIPLIERS,
+    DEFAULT_COMPETITION_SCENARIO,
+    DRIVER_REVENUE_SHARE,
+    DURATION_CALIBRATION_MIN_COUNT,
+    DURATION_CALIBRATION_SHRINKAGE,
+    DURATION_DISTANCE_BINS_MILES,
+    DURATION_MAX_TAIL_MULTIPLIER,
+    DURATION_MIN_TAIL_MULTIPLIER,
+    FALLBACK_SPEED_MPH,
+    GLOBAL_OD_DISCOUNT,
+    GRAVITY_PRIOR_STRENGTH,
+    MAX_DESTINATIONS_PER_ORIGIN,
+    MAX_SPEED_MPH,
+    MIN_SPEED_MPH,
+    MAX_DISTANCE_MILES,
+    MAX_DURATION_MIN,
+    MAX_EXPECTED_WAIT_MINUTES,
+    MAX_FARE,
+    MIN_CONFIDENCE,
+    MIN_DISTANCE_MILES,
+    MIN_DURATION_MIN,
+    MIN_EXPECTED_WAIT_MINUTES,
+    MIN_FARE,
+    MONTHS,
+    NODE_PRIOR_STRENGTH,
+    N_TIME_BINS,
+    OD_DIRICHLET_STRENGTH,
+    OD_OBS_PRIOR_STRENGTH,
+    PROCESSED_DIR,
+    REFERENCE_WAIT_MINUTES,
+    NEIGHBOR_SUPPLY_DIFFUSION,
+    SUPPLY_BASE_FLOOR,
+    SPATIAL_DECAY_MILES,
+    SPATIAL_NEIGHBOR_COUNT,
+    TEMPORAL_DECAY_BINS,
+    TEMPORAL_WINDOW_BINS,
+    TIME_BIN_MINUTES,
+    VACANT_DEMAND_ATTRACTION,
+    VACANT_HISTORY_BINS,
+    VACANT_PICKUP_DEPLETION,
+    VACANT_STOCK_PERSISTENCE,
+    ZONE_LOOKUP,
+    ZONE_SHP,
+    ensure_directories,
+)
+from two_hour_environment import DynamicTaxiEnvironment
 
-# =============================================================================
-# Configuration
-# =============================================================================
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-OUTPUT_DIR = os.path.join(BASE_DIR, "processed_data")
-
-MONTHS = ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06"]
-MONTH_TAG = f"{MONTHS[0]}_{MONTHS[-1]}"
-
-ZONE_SHP = os.path.join(DATA_DIR, "taxi_zones.shp")
-ZONE_LOOKUP = os.path.join(DATA_DIR, "taxi_zone_lookup.csv")
-
-TRIP_USE_COLS = [
+TRIP_COLUMNS = [
     "tpep_pickup_datetime",
     "tpep_dropoff_datetime",
     "PULocationID",
@@ -70,1496 +81,907 @@ TRIP_USE_COLS = [
     "trip_distance",
     "fare_amount",
     "tip_amount",
-    "total_amount",
 ]
 
-# Cleaning thresholds
-MIN_FARE = 2.50
-MAX_FARE = 500.0
-MIN_DISTANCE_MILES = 0.01
-MAX_DISTANCE_MILES = 100.0
-MIN_DURATION_MIN = 1.0
-MAX_DURATION_MIN = 240.0
 
-# Model assumptions
-DRIVER_SHARE = 0.70
-FALLBACK_SPEED_MPH = 12.0
-ASTAR_HEURISTIC_SPEED_MPH = 60.0  # deliberately high so time heuristic is conservative
-SPATIAL_ADJACENCY_DISTANCE_FEET = 200.0
-MIN_OD_TRIP_COUNT = 5
-
-# Recommendation / route utility weights.
-DEFAULT_INCOME_WEIGHT = 1.0
-DEFAULT_DEMAND_WEIGHT = 0.30
-# Stronger repositioning penalties keep the recommender from choosing far-away
-# zones simply because their historical income is high.
-DEFAULT_TRAVEL_TIME_WEIGHT = 0.50
-DEFAULT_DISTANCE_WEIGHT = 0.15
-
-# The full planning horizon is 2 hours, but a driver should not spend the whole
-# horizon empty-driving to a far opportunity zone. These hard filters constrain
-# candidate destinations and candidate paths to plausible repositioning moves.
-DEFAULT_MAX_REPOSITION_TIME_MIN = 45.0
-DEFAULT_MAX_REPOSITION_DISTANCE_MILES = 25.0
-
-# Revised single-driver problem: one origin and a finite planning horizon.
-DEFAULT_TIME_BUDGET_MIN = 120.0
-DEFAULT_TIME_BIN_MIN = 15.0
-DEFAULT_GAMMA = 0.97
-
-# RL defaults
-DEFAULT_Q_EPISODES = 1500
-DEFAULT_Q_ALPHA = 0.20
-DEFAULT_Q_EPSILON_START = 1.00
-DEFAULT_Q_EPSILON_END = 0.05
+def circular_bin_distance(a: int, b: int) -> int:
+    d = abs(int(a) - int(b))
+    return min(d, N_TIME_BINS - d)
 
 
-# =============================================================================
-# Basic helpers
-# =============================================================================
-
-def ensure_output_dir() -> None:
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-
-def safe_read_parquet(path: str, columns: Optional[List[str]] = None) -> pd.DataFrame:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Missing parquet file: {path}")
-    return pd.read_parquet(path, columns=columns)
+def weighted_mean(values: Sequence[float], weights: Sequence[float], default: float) -> float:
+    vals = []
+    wts = []
+    for v, w in zip(values, weights):
+        if pd.notna(v) and np.isfinite(v) and float(w) > 0:
+            vals.append(float(v))
+            wts.append(float(w))
+    if not wts or sum(wts) <= 0:
+        return float(default)
+    return float(np.average(vals, weights=wts))
 
 
-def normalize_series(s: pd.Series) -> pd.Series:
-    s = s.astype(float).replace([np.inf, -np.inf], np.nan)
-    if s.notna().sum() == 0:
-        return pd.Series(0.0, index=s.index)
-    lo = s.min(skipna=True)
-    hi = s.max(skipna=True)
-    if pd.isna(lo) or pd.isna(hi) or math.isclose(float(hi), float(lo)):
-        return pd.Series(0.0, index=s.index)
-    return (s - lo) / (hi - lo)
+def geometric_weighted_mean(values: Sequence[float], weights: Sequence[float], default: float) -> float:
+    """Weighted mean on a log scale for positive, right-skewed durations."""
+    vals: List[float] = []
+    wts: List[float] = []
+    for value, weight in zip(values, weights):
+        if pd.notna(value) and np.isfinite(value) and float(value) > 0 and float(weight) > 0:
+            vals.append(math.log(float(value)))
+            wts.append(float(weight))
+    if not wts or sum(wts) <= 0:
+        return float(default)
+    return float(math.exp(np.average(vals, weights=wts)))
 
 
-def feet_to_miles(feet: float) -> float:
-    return float(feet) / 5280.0
+def duration_distance_band(distance_miles: float) -> str:
+    edges = list(DURATION_DISTANCE_BINS_MILES)
+    d = float(max(0.0, distance_miles))
+    for low, high in zip(edges[:-1], edges[1:]):
+        if low <= d < high:
+            return f"{low:g}-{high:g}"
+    return f"{edges[-2]:g}-{edges[-1]:g}"
 
 
-def miles_to_minutes(miles: float, speed_mph: float = FALLBACK_SPEED_MPH) -> float:
-    if speed_mph <= 0:
-        raise ValueError("speed_mph must be positive")
-    return float(miles) / speed_mph * 60.0
+def _shrunk_ratio(group: pd.DataFrame, global_ratio: float) -> float:
+    if group.empty:
+        return 1.0
+    count = float(group["trip_count"].sum())
+    raw = weighted_mean(group["duration_ratio"], group["trip_count"], global_ratio)
+    reliability = count / (count + DURATION_CALIBRATION_SHRINKAGE)
+    target = reliability * raw + (1.0 - reliability) * global_ratio
+    return float(np.clip(target / max(global_ratio, 1e-9), 0.75, 1.35))
 
 
-def path_signature(path: Sequence[int]) -> Tuple[int, ...]:
-    return tuple(int(x) for x in path)
+def build_duration_calibration(
+    observed: pd.DataFrame, centroids_df: pd.DataFrame, time_profiles: pd.DataFrame
+) -> Dict[str, object]:
+    """Learn residual duration multipliers from observed OD-time cells.
+
+    The base duration is distance / time-bin speed. Multipliers describe persistent residual
+    congestion by distance band, borough pair, airport involvement and time bin. Every factor
+    is empirically shrunk toward one to avoid unstable sparse-cell corrections.
+    """
+    zone_meta = centroids_df.set_index("zone_id")[["borough", "zone_name"]].to_dict("index")
+    speed_by_bin = dict(zip(time_profiles["time_bin"].astype(int), time_profiles["speed_mph"].astype(float)))
+    work = observed[(observed["observed_avg_distance_miles"] > 0) & (observed["observed_avg_duration_min"] > 0)].copy()
+    if work.empty:
+        return {"global_ratio": 1.0, "distance": {}, "borough_pair": {}, "airport": {}, "time_bin": {}}
+    work["structural_duration"] = [
+        max(1.0, float(d) / max(MIN_SPEED_MPH, speed_by_bin.get(int(tb), FALLBACK_SPEED_MPH)) * 60.0)
+        for d, tb in zip(work["observed_avg_distance_miles"], work["time_bin"])
+    ]
+    work["duration_ratio"] = (work["observed_avg_duration_min"] / work["structural_duration"]).clip(0.35, 3.0)
+    work["distance_band"] = work["observed_avg_distance_miles"].map(duration_distance_band)
+    work["origin_borough"] = work["origin"].map(lambda z: str(zone_meta.get(int(z), {}).get("borough", "Unknown")))
+    work["destination_borough"] = work["destination"].map(lambda z: str(zone_meta.get(int(z), {}).get("borough", "Unknown")))
+    work["borough_pair"] = work["origin_borough"] + "->" + work["destination_borough"]
+    work["airport_pair"] = [
+        "airport" if ("airport" in str(zone_meta.get(int(o), {}).get("zone_name", "")).lower() or
+                      "airport" in str(zone_meta.get(int(d), {}).get("zone_name", "")).lower()) else "non_airport"
+        for o, d in zip(work["origin"], work["destination"])
+    ]
+    global_ratio = weighted_mean(work["duration_ratio"], work["trip_count"], 1.0)
+    def factors(column: str) -> Dict[str, float]:
+        out: Dict[str, float] = {}
+        for key, group in work.groupby(column, sort=False):
+            if float(group["trip_count"].sum()) >= DURATION_CALIBRATION_MIN_COUNT:
+                out[str(key)] = _shrunk_ratio(group, global_ratio)
+        return out
+    return {
+        "global_ratio": float(np.clip(global_ratio, DURATION_MIN_TAIL_MULTIPLIER, DURATION_MAX_TAIL_MULTIPLIER)),
+        "distance": factors("distance_band"),
+        "borough_pair": factors("borough_pair"),
+        "airport": factors("airport_pair"),
+        "time_bin": factors("time_bin"),
+    }
 
 
-def deduplicate_path_results(paths: Iterable["PathResult"]) -> List["PathResult"]:
-    seen: Dict[Tuple[int, ...], PathResult] = {}
-    for p in paths:
-        seen[path_signature(p.path)] = p
-    return list(seen.values())
+def calibrated_duration_prior(
+    origin: int, destination: int, time_bin: int, distance_miles: float,
+    speed_mph: float, zone_meta: Mapping[int, Mapping[str, object]], calibration: Mapping[str, object]
+) -> Tuple[float, float, str, str]:
+    origin_meta, destination_meta = zone_meta.get(int(origin), {}), zone_meta.get(int(destination), {})
+    pair = f"{origin_meta.get('borough', 'Unknown')}->{destination_meta.get('borough', 'Unknown')}"
+    airport = "airport" if ("airport" in str(origin_meta.get("zone_name", "")).lower() or
+                            "airport" in str(destination_meta.get("zone_name", "")).lower()) else "non_airport"
+    band = duration_distance_band(distance_miles)
+    multiplier = float(calibration.get("global_ratio", 1.0))
+    multiplier *= float(dict(calibration.get("distance", {})).get(band, 1.0))
+    multiplier *= float(dict(calibration.get("borough_pair", {})).get(pair, 1.0))
+    multiplier *= float(dict(calibration.get("airport", {})).get(airport, 1.0))
+    multiplier *= float(dict(calibration.get("time_bin", {})).get(str(int(time_bin)), 1.0))
+    multiplier = float(np.clip(multiplier, DURATION_MIN_TAIL_MULTIPLIER, DURATION_MAX_TAIL_MULTIPLIER))
+    base = max(1.0, float(distance_miles) / max(MIN_SPEED_MPH, float(speed_mph)) * 60.0)
+    return max(1.0, base * multiplier), multiplier, band, pair
 
 
-# =============================================================================
-# Data construction
-# =============================================================================
+def pooled_std(sum_x: float, sum_x2: float, n: float) -> float:
+    if n <= 1:
+        return 0.0
+    mean = sum_x / n
+    variance = max(0.0, sum_x2 / n - mean * mean)
+    return float(math.sqrt(variance))
 
-def load_zone_geometries(shapefile_path: str = ZONE_SHP, lookup_path: str = ZONE_LOOKUP) -> gpd.GeoDataFrame:
-    """Load TLC zone polygons and join human-readable names."""
-    zones = gpd.read_file(shapefile_path)
-    lookup = pd.read_csv(lookup_path)
 
-    if "LocationID" not in zones.columns:
-        possible = [c for c in zones.columns if c.lower() == "locationid"]
-        if not possible:
-            raise ValueError("Cannot find LocationID in taxi_zones shapefile.")
-        zones = zones.rename(columns={possible[0]: "LocationID"})
-
+def read_zone_data() -> Tuple[gpd.GeoDataFrame, pd.DataFrame]:
+    if not ZONE_SHP.exists():
+        raise FileNotFoundError(f"Missing shapefile: {ZONE_SHP}")
+    if not ZONE_LOOKUP.exists():
+        raise FileNotFoundError(f"Missing lookup: {ZONE_LOOKUP}")
+    zones = gpd.read_file(ZONE_SHP)
+    lookup = pd.read_csv(ZONE_LOOKUP)
+    loc_col = next((c for c in zones.columns if c.lower() == "locationid"), None)
+    if loc_col is None:
+        raise ValueError("taxi_zones.shp does not contain LocationID")
+    zones = zones.rename(columns={loc_col: "LocationID"})
+    zones["LocationID"] = pd.to_numeric(zones["LocationID"], errors="coerce").astype("Int64")
+    lookup["LocationID"] = pd.to_numeric(lookup["LocationID"], errors="coerce").astype("Int64")
+    zones = zones.dropna(subset=["LocationID", "geometry"]).copy()
     zones["LocationID"] = zones["LocationID"].astype(int)
-    lookup["LocationID"] = lookup["LocationID"].astype(int)
-
-    zones = zones[zones.geometry.notna()].copy()
     zones = zones[zones.geometry.is_valid].copy()
-
-    keep_lookup_cols = [c for c in ["LocationID", "Borough", "Zone", "service_zone"] if c in lookup.columns]
-    zones = zones.merge(lookup[keep_lookup_cols], on="LocationID", how="left", suffixes=("", "_lookup"))
-
-    if "Zone" not in zones.columns and "zone" in zones.columns:
-        zones = zones.rename(columns={"zone": "Zone"})
-    if "Borough" not in zones.columns and "borough" in zones.columns:
-        zones = zones.rename(columns={"borough": "Borough"})
-
-    zones = zones.sort_values("LocationID").reset_index(drop=True)
-    return zones
-
-
-def build_nodes_table(zones: gpd.GeoDataFrame) -> pd.DataFrame:
-    centroids = zones.geometry.centroid
-    nodes = pd.DataFrame(
+    keep = [c for c in ["LocationID", "Borough", "Zone", "service_zone"] if c in lookup.columns]
+    zones = zones.merge(lookup[keep], on="LocationID", how="left", suffixes=("", "_lookup"))
+    if zones.crs is None:
+        raise ValueError("Taxi-zone shapefile has no CRS")
+    # NYC TLC taxi zones are usually projected in feet; use EPSG:2263 if the source is geographic.
+    projected = zones.to_crs(2263) if zones.crs.is_geographic else zones.copy()
+    centroid_proj = projected.geometry.centroid
+    centroid_ll = gpd.GeoSeries(centroid_proj, crs=projected.crs).to_crs(4326)
+    centroids = pd.DataFrame(
         {
-            "zone_id": zones["LocationID"].astype(int),
-            "borough": zones.get("Borough", pd.Series([None] * len(zones))).astype(str),
-            "zone_name": zones.get("Zone", pd.Series([None] * len(zones))).astype(str),
-            "service_zone": zones.get("service_zone", pd.Series([None] * len(zones))).astype(str),
-            "centroid_x": centroids.x,
-            "centroid_y": centroids.y,
-            "area_sqft": zones.geometry.area,
+            "zone_id": projected["LocationID"].astype(int),
+            "zone_name": projected.get("Zone", pd.Series("Unknown", index=projected.index)).fillna("Unknown").astype(str),
+            "borough": projected.get("Borough", pd.Series("Unknown", index=projected.index)).fillna("Unknown").astype(str),
+            "service_zone": projected.get("service_zone", pd.Series("Unknown", index=projected.index)).fillna("Unknown").astype(str),
+            "centroid_x": centroid_proj.x.astype(float),
+            "centroid_y": centroid_proj.y.astype(float),
+            "centroid_lon": centroid_ll.x.astype(float),
+            "centroid_lat": centroid_ll.y.astype(float),
+            "area_sqft": projected.geometry.area.astype(float),
         }
-    )
-    return nodes
+    ).sort_values("zone_id").reset_index(drop=True)
+    return projected.sort_values("LocationID").reset_index(drop=True), centroids
 
 
-def build_spatial_adjacency_edges(
-    zones: gpd.GeoDataFrame,
-    distance_threshold_feet: float = SPATIAL_ADJACENCY_DISTANCE_FEET,
-) -> pd.DataFrame:
-    """Build directed adjacency edges from polygon touches / near touches."""
-    zone_ids = zones["LocationID"].astype(int).tolist()
-    geom_by_id = dict(zip(zone_ids, zones.geometry))
-    centroid_by_id = dict(zip(zone_ids, zones.geometry.centroid))
+def available_parquet_columns(path: Path) -> List[str]:
+    try:
+        import pyarrow.parquet as pq
 
-    sindex = zones.sindex
-    records: List[Dict[str, float]] = []
-    seen_pairs = set()
-
-    for idx, row in zones.iterrows():
-        u = int(row["LocationID"])
-        geom = row.geometry
-        candidate_idx = list(sindex.query(geom.buffer(distance_threshold_feet), predicate="intersects"))
-        for j in candidate_idx:
-            if j == idx:
-                continue
-            v = int(zones.iloc[j]["LocationID"])
-            pair = tuple(sorted((u, v)))
-            if pair in seen_pairs:
-                continue
-            g2 = geom_by_id[v]
-            dist_feet = float(geom.distance(g2))
-            if geom.touches(g2) or geom.intersects(g2) or dist_feet <= distance_threshold_feet:
-                seen_pairs.add(pair)
-                c1 = centroid_by_id[u]
-                c2 = centroid_by_id[v]
-                centroid_miles = feet_to_miles(c1.distance(c2))
-                fallback_time = miles_to_minutes(centroid_miles)
-                for a, b in [(u, v), (v, u)]:
-                    records.append(
-                        {
-                            "origin": int(a),
-                            "destination": int(b),
-                            "edge_source": "spatial_adjacency",
-                            "trip_count": 0,
-                            "avg_distance_miles": centroid_miles,
-                            "avg_duration_min": fallback_time,
-                            "avg_driver_income": 0.0,
-                        }
-                    )
-
-    return pd.DataFrame(records)
+        return list(pq.ParquetFile(path).schema.names)
+    except Exception:
+        return list(pd.read_parquet(path, engine="auto").columns)
 
 
-def clean_trip_data(df: pd.DataFrame, valid_zone_ids: set[int], month: str) -> pd.DataFrame:
-    """Clean raw yellow taxi trip records for node-income and OD estimates."""
-    missing = [c for c in TRIP_USE_COLS if c not in df.columns]
+def clean_month(path: Path, valid_zones: set[int], month: str) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing trip file: {path}")
+    if path.suffix.lower() == ".csv":
+        header = pd.read_csv(path, nrows=0)
+        available = set(header.columns)
+    else:
+        available = set(available_parquet_columns(path))
+    required = {"tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID", "trip_distance", "fare_amount"}
+    missing = sorted(required - available)
     if missing:
-        raise ValueError(f"Missing columns in {month}: {missing}")
-
-    df = df.copy()
+        raise ValueError(f"{path.name} is missing required columns: {missing}")
+    use = [c for c in TRIP_COLUMNS if c in available]
+    if path.suffix.lower() == ".csv":
+        df = pd.read_csv(path, usecols=use)
+    else:
+        df = pd.read_parquet(path, columns=use)
+    if "tip_amount" not in df.columns:
+        df["tip_amount"] = 0.0
+    raw_count = len(df)
     df["tpep_pickup_datetime"] = pd.to_datetime(df["tpep_pickup_datetime"], errors="coerce")
     df["tpep_dropoff_datetime"] = pd.to_datetime(df["tpep_dropoff_datetime"], errors="coerce")
-
-    for c in ["PULocationID", "DOLocationID"]:
+    for c in ["PULocationID", "DOLocationID", "trip_distance", "fare_amount", "tip_amount"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-    for c in ["trip_distance", "fare_amount", "tip_amount", "total_amount"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    df = df.dropna(
-        subset=[
-            "tpep_pickup_datetime",
-            "tpep_dropoff_datetime",
-            "PULocationID",
-            "DOLocationID",
-            "trip_distance",
-            "fare_amount",
-        ]
-    )
-
+    df = df.dropna(subset=["tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID", "trip_distance", "fare_amount"])
     df["PULocationID"] = df["PULocationID"].astype(int)
     df["DOLocationID"] = df["DOLocationID"].astype(int)
-    df = df[df["PULocationID"].isin(valid_zone_ids) & df["DOLocationID"].isin(valid_zone_ids)]
-
+    df = df[df["PULocationID"].isin(valid_zones) & df["DOLocationID"].isin(valid_zones)].copy()
     df["duration_min"] = (df["tpep_dropoff_datetime"] - df["tpep_pickup_datetime"]).dt.total_seconds() / 60.0
     df = df[
-        (df["fare_amount"].between(MIN_FARE, MAX_FARE))
-        & (df["trip_distance"].between(MIN_DISTANCE_MILES, MAX_DISTANCE_MILES))
-        & (df["duration_min"].between(MIN_DURATION_MIN, MAX_DURATION_MIN))
+        df["fare_amount"].between(MIN_FARE, MAX_FARE)
+        & df["trip_distance"].between(MIN_DISTANCE_MILES, MAX_DISTANCE_MILES)
+        & df["duration_min"].between(MIN_DURATION_MIN, MAX_DURATION_MIN)
     ].copy()
-
-    df["tip_amount"] = df["tip_amount"].fillna(0.0)
-    df["total_amount"] = df["total_amount"].fillna(df["fare_amount"] + df["tip_amount"])
-    df["driver_income"] = DRIVER_SHARE * (df["fare_amount"] + df["tip_amount"])
-
-    df["pickup_hour"] = df["tpep_pickup_datetime"].dt.hour
-    df["pickup_weekday"] = df["tpep_pickup_datetime"].dt.weekday
-    df["time_bin"] = df["pickup_hour"] * 4 + (df["tpep_pickup_datetime"].dt.minute // 15)
-    df["month"] = month
+    df["tip_amount"] = df["tip_amount"].fillna(0.0).clip(lower=0.0)
+    # Revenue model intentionally excludes tolls/taxes/surcharges and remains configurable.
+    df["driver_revenue"] = DRIVER_REVENUE_SHARE * (df["fare_amount"].clip(lower=0.0) + df["tip_amount"])
+    df = df[df["driver_revenue"] > 0].copy()
+    df["time_bin"] = (
+        df["tpep_pickup_datetime"].dt.hour * (60 // TIME_BIN_MINUTES)
+        + df["tpep_pickup_datetime"].dt.minute // TIME_BIN_MINUTES
+    ).astype(int)
+    df["dropoff_time_bin"] = (
+        df["tpep_dropoff_datetime"].dt.hour * (60 // TIME_BIN_MINUTES)
+        + df["tpep_dropoff_datetime"].dt.minute // TIME_BIN_MINUTES
+    ).astype(int)
+    df["pickup_date"] = df["tpep_pickup_datetime"].dt.date
+    print(f"{month}: raw {raw_count:,} -> clean {len(df):,}")
     return df
 
 
-def load_and_clean_all_trips(months: Sequence[str], valid_zone_ids: set[int]) -> pd.DataFrame:
-    frames = []
-    for month in months:
-        path = os.path.join(DATA_DIR, f"yellow_tripdata_{month}.parquet")
-        raw = safe_read_parquet(path, columns=TRIP_USE_COLS)
-        clean = clean_trip_data(raw, valid_zone_ids, month)
-        print(f"{month}: raw {len(raw):,} -> clean {len(clean):,}")
-        frames.append(clean)
-    return pd.concat(frames, ignore_index=True)
-
-
-def build_node_income_table(trips: pd.DataFrame, nodes: pd.DataFrame) -> pd.DataFrame:
-    """Estimate pickup-zone opportunity statistics from cleaned trips."""
-    if trips.empty:
-        raise ValueError("No trips available to build node income table.")
-
-    total_hours = max(
-        1.0,
-        (trips["tpep_pickup_datetime"].max() - trips["tpep_pickup_datetime"].min()).total_seconds() / 3600.0,
-    )
-
-    pickup = (
-        trips.groupby("PULocationID")
-        .agg(
-            pickup_count=("PULocationID", "size"),
-            avg_driver_income_per_trip=("driver_income", "mean"),
-            median_driver_income_per_trip=("driver_income", "median"),
-            avg_trip_distance_miles=("trip_distance", "mean"),
-            avg_trip_duration_min=("duration_min", "mean"),
-            avg_fare=("fare_amount", "mean"),
-            avg_tip=("tip_amount", "mean"),
-            avg_total_amount=("total_amount", "mean"),
-        )
-        .reset_index()
-        .rename(columns={"PULocationID": "zone_id"})
-    )
-
-    dropoff = (
-        trips.groupby("DOLocationID")
-        .agg(dropoff_count=("DOLocationID", "size"))
-        .reset_index()
-        .rename(columns={"DOLocationID": "zone_id"})
-    )
-
-    out = nodes.merge(pickup, on="zone_id", how="left").merge(dropoff, on="zone_id", how="left")
-    numeric_fill_zero = [
-        "pickup_count",
-        "dropoff_count",
-        "avg_driver_income_per_trip",
-        "median_driver_income_per_trip",
-        "avg_trip_distance_miles",
-        "avg_trip_duration_min",
-        "avg_fare",
-        "avg_tip",
-        "avg_total_amount",
-    ]
-    for c in numeric_fill_zero:
-        if c in out.columns:
-            out[c] = out[c].fillna(0.0)
-
-    out["pickup_rate_per_hour"] = out["pickup_count"] / total_hours
-    out["dropoff_rate_per_hour"] = out["dropoff_count"] / total_hours
-    out["expected_pickups_2h"] = out["pickup_rate_per_hour"] * 2.0
-    out["expected_income_2h_proxy"] = out["avg_driver_income_per_trip"] * out["expected_pickups_2h"]
-
-    out["income_score"] = normalize_series(out["avg_driver_income_per_trip"])
-    out["demand_score"] = normalize_series(out["pickup_rate_per_hour"])
-    out["opportunity_score"] = normalize_series(out["expected_income_2h_proxy"])
-
-    return out.sort_values("zone_id").reset_index(drop=True)
-
-
-def build_od_weights(trips: pd.DataFrame) -> pd.DataFrame:
+def monthly_aggregates(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, int]:
+    """Return OD, pickup-node and dropoff-node aggregates for one month."""
+    work = df.copy()
+    for col in ["driver_revenue", "duration_min", "trip_distance"]:
+        work[f"{col}_sq"] = work[col] ** 2
     od = (
-        trips.groupby(["PULocationID", "DOLocationID"])
+        work.groupby(["time_bin", "PULocationID", "DOLocationID"], sort=False)
         .agg(
             trip_count=("PULocationID", "size"),
-            avg_distance_miles=("trip_distance", "mean"),
-            avg_duration_min=("duration_min", "mean"),
-            avg_driver_income=("driver_income", "mean"),
-            avg_total_amount=("total_amount", "mean"),
+            revenue_sum=("driver_revenue", "sum"),
+            revenue_sq_sum=("driver_revenue_sq", "sum"),
+            duration_sum=("duration_min", "sum"),
+            duration_sq_sum=("duration_min_sq", "sum"),
+            distance_sum=("trip_distance", "sum"),
+            distance_sq_sum=("trip_distance_sq", "sum"),
         )
         .reset_index()
         .rename(columns={"PULocationID": "origin", "DOLocationID": "destination"})
     )
-    od = od[od["trip_count"] >= MIN_OD_TRIP_COUNT].copy()
-    od["edge_source"] = "historical_od"
-    return od
-
-
-def build_edges(spatial_edges: pd.DataFrame, od_weights: pd.DataFrame) -> pd.DataFrame:
-    """Merge spatial fallback edges and historical OD edges.
-
-    Historical OD edges take priority when duplicate origin-destination pairs exist.
-    Spatial edges preserve local graph connectivity when no historical OD edge exists.
-    """
-    edge_cols = [
-        "origin",
-        "destination",
-        "edge_source",
-        "trip_count",
-        "avg_distance_miles",
-        "avg_duration_min",
-        "avg_driver_income",
-    ]
-    s = spatial_edges[edge_cols].copy()
-    o = od_weights[edge_cols].copy()
-    s["priority"] = 0
-    o["priority"] = 1
-    edges = pd.concat([s, o], ignore_index=True)
-    edges = edges.sort_values(["origin", "destination", "priority"]).drop_duplicates(
-        ["origin", "destination"], keep="last"
+    pickups = (
+        work.groupby(["time_bin", "PULocationID"], sort=False)
+        .size().reset_index(name="pickup_count")
+        .rename(columns={"PULocationID": "zone_id"})
     )
-    edges = edges.drop(columns="priority")
-
-    edges["travel_time_cost"] = edges["avg_duration_min"].clip(lower=0.1)
-    edges["distance_cost"] = edges["avg_distance_miles"].clip(lower=0.001)
-
-    # This is only a diagnostic score, not a graph search cost.
-    edges["edge_income_score"] = normalize_series(edges["avg_driver_income"])
-    edges["edge_time_score"] = normalize_series(edges["avg_duration_min"])
-    edges["edge_distance_score"] = normalize_series(edges["avg_distance_miles"])
-    edges["edge_utility_proxy"] = (
-        edges["edge_income_score"]
-        - DEFAULT_TRAVEL_TIME_WEIGHT * edges["edge_time_score"]
-        - DEFAULT_DISTANCE_WEIGHT * edges["edge_distance_score"]
+    dropoffs = (
+        work.groupby(["dropoff_time_bin", "DOLocationID"], sort=False)
+        .size().reset_index(name="dropoff_count")
+        .rename(columns={"dropoff_time_bin": "time_bin", "DOLocationID": "zone_id"})
     )
-    return edges.sort_values(["origin", "destination"]).reset_index(drop=True)
+    service_days = int(work["pickup_date"].nunique())
+    return od, pickups, dropoffs, service_days
+
+def combine_aggregates(frames: Sequence[pd.DataFrame], keys: Sequence[str]) -> pd.DataFrame:
+    combined = pd.concat(frames, ignore_index=True)
+    numeric = [c for c in combined.columns if c not in keys]
+    return combined.groupby(list(keys), as_index=False, sort=False)[numeric].sum()
 
 
-def build_networkx_graph(nodes: pd.DataFrame, edges: pd.DataFrame) -> nx.DiGraph:
-    G = nx.DiGraph()
-    for _, row in nodes.iterrows():
-        attrs = row.to_dict()
-        node_id = int(attrs.pop("zone_id"))
-        G.add_node(node_id, **attrs)
-    for _, row in edges.iterrows():
-        attrs = row.to_dict()
-        u = int(attrs.pop("origin"))
-        v = int(attrs.pop("destination"))
-        G.add_edge(u, v, **attrs)
-    return G
+def make_global_od(od_agg: pd.DataFrame) -> pd.DataFrame:
+    numeric = [c for c in od_agg.columns if c not in ["time_bin", "origin", "destination"]]
+    global_od = od_agg.groupby(["origin", "destination"], as_index=False)[numeric].sum()
+    n = global_od["trip_count"].clip(lower=1)
+    global_od["avg_driver_revenue"] = global_od["revenue_sum"] / n
+    global_od["avg_duration_min"] = global_od["duration_sum"] / n
+    global_od["avg_distance_miles"] = global_od["distance_sum"] / n
+    global_od["revenue_std"] = [pooled_std(a, b, c) for a, b, c in zip(global_od["revenue_sum"], global_od["revenue_sq_sum"], global_od["trip_count"])]
+    global_od["duration_std"] = [pooled_std(a, b, c) for a, b, c in zip(global_od["duration_sum"], global_od["duration_sq_sum"], global_od["trip_count"])]
+    global_od["distance_std"] = [pooled_std(a, b, c) for a, b, c in zip(global_od["distance_sum"], global_od["distance_sq_sum"], global_od["trip_count"])]
+    return global_od
 
 
-# =============================================================================
-# Dataclasses
-# =============================================================================
-
-@dataclass
-class PathResult:
-    path: List[int]
-    total_travel_time: float
-    total_distance: float
-    total_expected_income: float
-    total_demand_score: float
-    route_utility: float
-    num_edges: int
-    algorithm: str = "unknown"
-    destination: Optional[int] = None
-
-
-@dataclass
-class NodeRecommendation:
-    origin: int
-    destination: int
-    travel_time_min: float
-    distance_miles: float
-    avg_driver_income_per_trip: float
-    pickup_rate_per_hour: float
-    expected_income_2h_proxy: float
-    recommendation_utility: float
-    zone_name: str
-    borough: str
-    algorithm: str = "utility"
-
-
-@dataclass
-class TransitionRecord:
-    state_zone: int
-    state_time_bin: int
-    action_zone: int
-    next_zone: int
-    next_time_bin: int
-    reward: float
-    travel_time_min: float
-    distance_miles: float
-    done: bool
-
-
-# =============================================================================
-# Environment class
-# =============================================================================
-
-class TaxiOpportunityEnvironment:
-    """Single-driver opportunity environment.
-
-    Main task: given one start zone and a time budget, rank where a driver should
-    move to seek future pickups. It also provides static graph algorithms,
-    tabular RL baselines, and Shapley-ready candidate paths.
-    """
-
-    def __init__(self, graph: nx.DiGraph, nodes: pd.DataFrame, edges: pd.DataFrame):
-        self.G = graph
-        self.nodes = nodes.copy()
-        self.edges = edges.copy()
-        self.node_info = self.nodes.set_index("zone_id").to_dict(orient="index")
-        self.edge_lookup = self.edges.set_index(["origin", "destination"]).to_dict(orient="index")
-        self._spatial_graph: Optional[nx.Graph] = None
-
-    # -------------------------------------------------------------------------
-    # Basic accessors
-    # -------------------------------------------------------------------------
-
-    def validate_zone(self, zone_id: int) -> None:
-        if int(zone_id) not in self.G.nodes:
-            raise ValueError(f"Invalid zone_id {zone_id}. Not found in graph.")
-
-    def get_node_expected_income(self, zone_id: int) -> Dict[str, float]:
-        self.validate_zone(zone_id)
-        return self.node_info[int(zone_id)]
-
-    def edge_data(self, u: int, v: int) -> Dict:
-        if self.G.has_edge(u, v):
-            return self.G[int(u)][int(v)]
-        raise ValueError(f"No edge from {u} to {v}")
-
-    def _spatial_only_graph(self) -> nx.Graph:
-        if self._spatial_graph is not None:
-            return self._spatial_graph
-        SG = nx.Graph()
-        SG.add_nodes_from(self.G.nodes)
-        for u, v, data in self.G.edges(data=True):
-            if data.get("edge_source") == "spatial_adjacency":
-                SG.add_edge(int(u), int(v))
-        self._spatial_graph = SG
-        return SG
-
-    def centroid_distance_miles(self, u: int, v: int) -> float:
-        ui = self.node_info[int(u)]
-        vi = self.node_info[int(v)]
-        dx = float(ui["centroid_x"]) - float(vi["centroid_x"])
-        dy = float(ui["centroid_y"]) - float(vi["centroid_y"])
-        return feet_to_miles(math.sqrt(dx * dx + dy * dy))
-
-    # -------------------------------------------------------------------------
-    # Unified utility
-    # -------------------------------------------------------------------------
-
-    def recommendation_utility(
-        self,
-        origin: int,
-        destination: int,
-        travel_time_min: float,
-        distance_miles: float,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        uniform_income: bool = False,
-        income_weight: float = DEFAULT_INCOME_WEIGHT,
-        demand_weight: float = DEFAULT_DEMAND_WEIGHT,
-        travel_time_weight: float = DEFAULT_TRAVEL_TIME_WEIGHT,
-        distance_weight: float = DEFAULT_DISTANCE_WEIGHT,
-        max_reposition_time_min: float = DEFAULT_MAX_REPOSITION_TIME_MIN,
-        max_reposition_distance_miles: float = DEFAULT_MAX_REPOSITION_DISTANCE_MILES,
-    ) -> float:
-        """Unified utility for moving from origin to a candidate opportunity zone.
-
-        The utility is intentionally evaluated against the repositioning limit,
-        not the full two-hour planning horizon. This prevents far zones from
-        looking artificially attractive just because they are technically reachable
-        within 120 minutes.
-        """
-        del origin  # kept for future origin-specific extensions
-        info = self.node_info[int(destination)]
-        income_score = 1.0 if uniform_income else float(info.get("income_score", 0.0))
-        demand_score = float(info.get("demand_score", 0.0))
-        t_norm = float(travel_time_min) / max(1.0, float(max_reposition_time_min))
-        d_norm = float(distance_miles) / max(1.0, float(max_reposition_distance_miles)) if np.isfinite(distance_miles) else 0.0
-        return (
-            income_weight * income_score
-            + demand_weight * demand_score
-            - travel_time_weight * t_norm
-            - distance_weight * d_norm
-        )
-
-    def compute_path_result(
-        self,
-        path: Sequence[int],
-        algorithm: str = "unknown",
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        uniform_income: bool = False,
-        income_weight: float = DEFAULT_INCOME_WEIGHT,
-        demand_weight: float = DEFAULT_DEMAND_WEIGHT,
-        travel_time_weight: float = DEFAULT_TRAVEL_TIME_WEIGHT,
-        distance_weight: float = DEFAULT_DISTANCE_WEIGHT,
-        max_reposition_time_min: float = DEFAULT_MAX_REPOSITION_TIME_MIN,
-        max_reposition_distance_miles: float = DEFAULT_MAX_REPOSITION_DISTANCE_MILES,
-    ) -> PathResult:
-        if len(path) < 2:
-            raise ValueError("Path must contain at least origin and destination.")
-        total_time = 0.0
-        total_distance = 0.0
-        total_demand_score = 0.0
-        for u, v in zip(path[:-1], path[1:]):
-            d = self.edge_data(int(u), int(v))
-            total_time += float(d.get("avg_duration_min", 0.0))
-            total_distance += float(d.get("avg_distance_miles", 0.0))
-            total_demand_score += float(self.node_info[int(v)].get("demand_score", 0.0))
-
-        origin = int(path[0])
-        dest = int(path[-1])
-        dest_info = self.node_info[dest]
-        expected_income = float(dest_info.get("avg_driver_income_per_trip", 0.0))
-        route_utility = self.recommendation_utility(
-            origin=origin,
-            destination=dest,
-            travel_time_min=total_time,
-            distance_miles=total_distance,
-            time_budget_min=time_budget_min,
-            uniform_income=uniform_income,
-            income_weight=income_weight,
-            demand_weight=demand_weight,
-            travel_time_weight=travel_time_weight,
-            distance_weight=distance_weight,
-            max_reposition_time_min=max_reposition_time_min,
-            max_reposition_distance_miles=max_reposition_distance_miles,
-        )
-        return PathResult(
-            path=[int(x) for x in path],
-            total_travel_time=total_time,
-            total_distance=total_distance,
-            total_expected_income=expected_income,
-            total_demand_score=total_demand_score,
-            route_utility=route_utility,
-            num_edges=len(path) - 1,
-            algorithm=algorithm,
-            destination=dest,
-        )
-
-    # -------------------------------------------------------------------------
-    # Static graph algorithms: Dijkstra / A* / Yen KSP
-    # -------------------------------------------------------------------------
-
-    def _astar_heuristic(self, target: int, weight: str):
-        target = int(target)
-
-        def h(n1: int, n2: int = target) -> float:
-            miles = self.centroid_distance_miles(int(n1), int(n2))
-            if weight == "distance_cost":
-                return miles
-            # Conservative time heuristic. High speed avoids overestimation.
-            return miles_to_minutes(miles, ASTAR_HEURISTIC_SPEED_MPH)
-
-        return h
-
-    def shortest_path(
-        self,
-        origin: int,
-        destination: int,
-        weight: str = "travel_time_cost",
-        algorithm: str = "dijkstra",
-        **kwargs,
-    ) -> PathResult:
-        self.validate_zone(origin)
-        self.validate_zone(destination)
-        origin = int(origin)
-        destination = int(destination)
-        algorithm = algorithm.lower()
-        if algorithm == "astar":
-            path = nx.astar_path(
-                self.G,
-                origin,
-                destination,
-                heuristic=self._astar_heuristic(destination, weight),
-                weight=weight,
-            )
-            alg_name = f"astar_{'distance' if weight == 'distance_cost' else 'time'}"
-        elif algorithm == "dijkstra":
-            path = nx.shortest_path(self.G, origin, destination, weight=weight)
-            alg_name = f"dijkstra_{'distance' if weight == 'distance_cost' else 'time'}"
-        else:
-            raise ValueError("algorithm must be 'dijkstra' or 'astar'")
-        return self.compute_path_result(path, algorithm=alg_name, **kwargs)
-
-    def shortest_time_path(self, origin: int, destination: int, algorithm: str = "dijkstra", **kwargs) -> PathResult:
-        return self.shortest_path(origin, destination, weight="travel_time_cost", algorithm=algorithm, **kwargs)
-
-    def shortest_distance_path(self, origin: int, destination: int, algorithm: str = "dijkstra", **kwargs) -> PathResult:
-        return self.shortest_path(origin, destination, weight="distance_cost", algorithm=algorithm, **kwargs)
-
-    def yen_k_shortest_paths(
-        self,
-        origin: int,
-        destination: int,
-        k: int = 5,
-        weight: str = "travel_time_cost",
-        max_path_len: Optional[int] = None,
-        algorithm_label: Optional[str] = None,
-        **kwargs,
-    ) -> List[PathResult]:
-        """Yen-style K shortest simple paths via NetworkX shortest_simple_paths.
-
-        NetworkX implements the standard deviation/spur-path idea for simple paths.
-        The edge weight is non-negative travel time or distance, not negative utility.
-        """
-        self.validate_zone(origin)
-        self.validate_zone(destination)
-        results: List[PathResult] = []
-        label = algorithm_label or f"yen_ksp_{'distance' if weight == 'distance_cost' else 'time'}"
-        try:
-            gen = nx.shortest_simple_paths(self.G, int(origin), int(destination), weight=weight)
-            for path in gen:
-                if max_path_len is not None and len(path) > max_path_len:
-                    continue
-                results.append(self.compute_path_result(path, algorithm=label, **kwargs))
-                if len(results) >= k:
-                    break
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return []
-        return results
-
-    # Backward-compatible alias.
-    def k_shortest_paths(self, *args, **kwargs) -> List[PathResult]:
-        return self.yen_k_shortest_paths(*args, **kwargs)
-
-    # -------------------------------------------------------------------------
-    # Static recommendation algorithms
-    # -------------------------------------------------------------------------
-
-    def _reachable_lengths(self, origin: int) -> Tuple[Dict[int, float], Dict[int, float]]:
-        self.validate_zone(origin)
-        lengths_time = nx.single_source_dijkstra_path_length(self.G, int(origin), weight="travel_time_cost")
-        lengths_dist = nx.single_source_dijkstra_path_length(self.G, int(origin), weight="distance_cost")
-        return lengths_time, lengths_dist
-
-    def rank_opportunity_nodes(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        top_k: int = 20,
-        candidate_nodes: Optional[Iterable[int]] = None,
-        uniform_income: bool = False,
-        algorithm: str = "utility",
-        income_weight: float = DEFAULT_INCOME_WEIGHT,
-        demand_weight: float = DEFAULT_DEMAND_WEIGHT,
-        travel_time_weight: float = DEFAULT_TRAVEL_TIME_WEIGHT,
-        distance_weight: float = DEFAULT_DISTANCE_WEIGHT,
-        max_reposition_time_min: float = DEFAULT_MAX_REPOSITION_TIME_MIN,
-        max_reposition_distance_miles: float = DEFAULT_MAX_REPOSITION_DISTANCE_MILES,
-    ) -> pd.DataFrame:
-        """Rank destination zones by several stable algorithms.
-
-        algorithm options:
-        - 'utility': unified opportunity utility
-        - 'dijkstra_time': shortest travel time to zone
-        - 'dijkstra_distance': shortest distance to zone
-        - 'highest_income': destination avg income score / value
-        - 'highest_demand': destination demand score
-        """
-        self.validate_zone(origin)
-        origin = int(origin)
-        if candidate_nodes is None:
-            candidate_nodes = list(self.G.nodes)
-        candidate_nodes = [int(z) for z in candidate_nodes if int(z) != origin and int(z) in self.G.nodes]
-
-        lengths_time, lengths_dist = self._reachable_lengths(origin)
-        rows = []
-        for z in candidate_nodes:
-            t = float(lengths_time.get(z, np.inf))
-            if not np.isfinite(t) or t > time_budget_min or t > max_reposition_time_min:
-                continue
-            d = float(lengths_dist.get(z, np.nan))
-            if np.isfinite(d) and d > max_reposition_distance_miles:
-                continue
-            info = self.node_info[z]
-            income_score = 1.0 if uniform_income else float(info.get("income_score", 0.0))
-            demand_score = float(info.get("demand_score", 0.0))
-            utility = self.recommendation_utility(
-                origin=origin,
-                destination=z,
-                travel_time_min=t,
-                distance_miles=d,
-                time_budget_min=time_budget_min,
-                uniform_income=uniform_income,
-                income_weight=income_weight,
-                demand_weight=demand_weight,
-                travel_time_weight=travel_time_weight,
-                distance_weight=distance_weight,
-                max_reposition_time_min=max_reposition_time_min,
-                max_reposition_distance_miles=max_reposition_distance_miles,
-            )
-            rows.append(
-                {
-                    "origin": origin,
-                    "destination": z,
-                    "zone_name": info.get("zone_name", ""),
-                    "borough": info.get("borough", ""),
-                    "travel_time_min": t,
-                    "distance_miles": d,
-                    "avg_driver_income_per_trip": float(info.get("avg_driver_income_per_trip", 0.0)),
-                    "pickup_rate_per_hour": float(info.get("pickup_rate_per_hour", 0.0)),
-                    "expected_income_2h_proxy": float(info.get("expected_income_2h_proxy", 0.0)),
-                    "income_score": income_score,
-                    "demand_score": demand_score,
-                    "opportunity_score": float(info.get("opportunity_score", 0.0)),
-                    "recommendation_utility": utility,
-                    "algorithm": algorithm,
-                }
-            )
-        out = pd.DataFrame(rows)
-        if out.empty:
-            return out
-
-        algorithm = algorithm.lower()
-        if algorithm in {"utility", "utility_rank"}:
-            out = out.sort_values("recommendation_utility", ascending=False)
-        elif algorithm in {"dijkstra_time", "shortest_time", "time"}:
-            out = out.sort_values(["travel_time_min", "recommendation_utility"], ascending=[True, False])
-        elif algorithm in {"dijkstra_distance", "shortest_distance", "distance"}:
-            out = out.sort_values(["distance_miles", "recommendation_utility"], ascending=[True, False])
-        elif algorithm in {"highest_income", "income"}:
-            out = out.sort_values(["avg_driver_income_per_trip", "recommendation_utility"], ascending=[False, False])
-        elif algorithm in {"highest_demand", "demand"}:
-            out = out.sort_values(["pickup_rate_per_hour", "recommendation_utility"], ascending=[False, False])
-        else:
-            raise ValueError(f"Unknown ranking algorithm: {algorithm}")
-        out["algorithm"] = algorithm
-        return out.head(top_k).reset_index(drop=True)
-
-    def candidate_opportunity_nodes(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        max_candidates: int = 80,
-        m_per_algorithm: int = 30,
-        uniform_income: bool = False,
-        max_reposition_time_min: float = DEFAULT_MAX_REPOSITION_TIME_MIN,
-        max_reposition_distance_miles: float = DEFAULT_MAX_REPOSITION_DISTANCE_MILES,
-        algorithms: Sequence[str] = ("utility", "dijkstra_time", "dijkstra_distance", "highest_income", "highest_demand"),
-    ) -> List[int]:
-        """Candidate destination nodes for later Shapley / algorithm comparison.
-
-        This is now multi-seed rather than one single route corridor. It collects
-        high-ranking zones from several stable algorithms, then uses utility and
-        O-D accessibility to cap the player set.
-        """
-        selected: Dict[int, float] = {}
-        for alg in algorithms:
-            ranked = self.rank_opportunity_nodes(
-                origin=origin,
-                time_budget_min=time_budget_min,
-                top_k=m_per_algorithm,
-                uniform_income=uniform_income,
-                algorithm=alg,
-                max_reposition_time_min=max_reposition_time_min,
-                max_reposition_distance_miles=max_reposition_distance_miles,
-            )
-            if ranked.empty:
-                continue
-            for _, row in ranked.iterrows():
-                z = int(row["destination"])
-                # Keep best utility score if a node appears in multiple algorithms.
-                selected[z] = max(float(row["recommendation_utility"]), selected.get(z, -np.inf))
-        ordered = sorted(selected.items(), key=lambda x: x[1], reverse=True)
-        return [z for z, _ in ordered[:max_candidates]]
-
-    def build_candidate_path_pool(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        candidate_nodes: Optional[Sequence[int]] = None,
-        m_per_family: int = 5,
-        final_k: int = 30,
-        uniform_income: bool = False,
-        max_reposition_time_min: float = DEFAULT_MAX_REPOSITION_TIME_MIN,
-        max_reposition_distance_miles: float = DEFAULT_MAX_REPOSITION_DISTANCE_MILES,
-        diversity_threshold: float = 0.85,
-    ) -> List[PathResult]:
-        """Build a static candidate path pool using the uploaded-note logic.
-
-        Families included:
-        1. shortest-time destinations and paths
-        2. shortest-distance destinations and paths
-        3. highest-income destinations with shortest-time paths
-        4. highest-demand destinations with shortest-time paths
-        5. utility-ranked destinations with both time and distance paths
-
-        Then all paths are scored by the same unified utility and the top diverse
-        paths are retained. We never search directly with negative utility cost,
-        avoiding negative-cycle instability.
-        """
-        if candidate_nodes is None:
-            candidate_nodes = self.candidate_opportunity_nodes(
-                origin=origin,
-                time_budget_min=time_budget_min,
-                max_candidates=80,
-                uniform_income=uniform_income,
-                max_reposition_time_min=max_reposition_time_min,
-                max_reposition_distance_miles=max_reposition_distance_miles,
-            )
-        candidate_set = set(int(z) for z in candidate_nodes)
-
-        families = ["dijkstra_time", "dijkstra_distance", "highest_income", "highest_demand", "utility"]
-        destination_pool: List[int] = []
-        for alg in families:
-            top = self.rank_opportunity_nodes(
-                origin=origin,
-                time_budget_min=time_budget_min,
-                top_k=m_per_family,
-                candidate_nodes=candidate_set,
-                uniform_income=uniform_income,
-                algorithm=alg,
-                max_reposition_time_min=max_reposition_time_min,
-                max_reposition_distance_miles=max_reposition_distance_miles,
-            )
-            if not top.empty:
-                destination_pool.extend(top["destination"].astype(int).tolist())
-
-        destination_pool = list(dict.fromkeys(destination_pool))  # preserve order, remove duplicates
-        path_candidates: List[PathResult] = []
-        for dest in destination_pool:
-            try:
-                path_candidates.append(
-                    self.shortest_time_path(
-                        origin,
-                        dest,
-                        algorithm="dijkstra",
-                        time_budget_min=time_budget_min,
-                        uniform_income=uniform_income,
-                        max_reposition_time_min=max_reposition_time_min,
-                        max_reposition_distance_miles=max_reposition_distance_miles,
-                    )
-                )
-            except Exception:
-                pass
-            try:
-                path_candidates.append(
-                    self.shortest_distance_path(
-                        origin,
-                        dest,
-                        algorithm="dijkstra",
-                        time_budget_min=time_budget_min,
-                        uniform_income=uniform_income,
-                        max_reposition_time_min=max_reposition_time_min,
-                        max_reposition_distance_miles=max_reposition_distance_miles,
-                    )
-                )
-            except Exception:
-                pass
-            # Yen KSP gives extra local alternatives for a few important destinations.
-            path_candidates.extend(
-                self.yen_k_shortest_paths(
-                    origin,
-                    dest,
-                    k=2,
-                    weight="travel_time_cost",
-                    algorithm_label="yen_ksp_time",
-                    time_budget_min=time_budget_min,
-                    uniform_income=uniform_income,
-                )
-            )
-
-        # Filter by time budget and sort by unified utility.
-        unique = deduplicate_path_results(path_candidates)
-        feasible = [
-            p for p in unique
-            if p.total_travel_time <= time_budget_min
-            and p.total_travel_time <= max_reposition_time_min
-            and p.total_distance <= max_reposition_distance_miles
+def fit_gravity_prior(global_od: pd.DataFrame) -> Dict[str, float]:
+    if global_od.empty:
+        return {"intercept": 3.0, "distance": 2.5, "duration": 0.25, "mean_revenue": 15.0, "mean_duration": 20.0, "mean_distance": 4.0}
+    x = np.column_stack(
+        [
+            np.ones(len(global_od)),
+            global_od["avg_distance_miles"].to_numpy(float),
+            global_od["avg_duration_min"].to_numpy(float),
         ]
-        feasible.sort(key=lambda p: p.route_utility, reverse=True)
+    )
+    y = global_od["avg_driver_revenue"].to_numpy(float)
+    w = np.sqrt(global_od["trip_count"].clip(lower=1).to_numpy(float))
+    try:
+        beta, *_ = np.linalg.lstsq(x * w[:, None], y * w, rcond=None)
+    except np.linalg.LinAlgError:
+        beta = np.array([np.average(y, weights=w), 0.0, 0.0])
+    return {
+        "intercept": float(beta[0]),
+        "distance": float(beta[1]),
+        "duration": float(beta[2]),
+        "mean_revenue": float(np.average(y, weights=w)),
+        "mean_duration": float(np.average(global_od["avg_duration_min"], weights=w)),
+        "mean_distance": float(np.average(global_od["avg_distance_miles"], weights=w)),
+    }
 
-        # Diversity filter: avoid keeping many nearly identical node sequences.
-        selected_paths: List[PathResult] = []
-        selected_node_sets: List[set[int]] = []
-        for pr in feasible:
-            node_set = set(pr.path)
-            too_similar = False
-            for existing in selected_node_sets:
-                union_size = len(node_set | existing)
-                overlap = len(node_set & existing) / union_size if union_size else 0.0
-                if overlap >= diversity_threshold:
-                    too_similar = True
-                    break
-            if not too_similar:
-                selected_paths.append(pr)
-                selected_node_sets.append(node_set)
-            if len(selected_paths) >= final_k:
-                break
 
-        # If diversity filter was too strict, fill remaining slots by utility.
-        if len(selected_paths) < final_k:
-            seen = {path_signature(p.path) for p in selected_paths}
-            for pr in feasible:
-                sig = path_signature(pr.path)
-                if sig in seen:
-                    continue
-                selected_paths.append(pr)
-                seen.add(sig)
-                if len(selected_paths) >= final_k:
-                    break
+def centroid_distance_miles(a: int, b: int, centroids: Mapping[int, Tuple[float, float]]) -> float:
+    x1, y1 = centroids[int(a)]
+    x2, y2 = centroids[int(b)]
+    return float(math.hypot(x1 - x2, y1 - y2) / 5280.0)
 
-        return selected_paths[:final_k]
 
-    def shapley_ready_path_table(
-        self,
-        origin: int,
-        paths: Sequence[PathResult],
-        baseline_path: Optional[Sequence[int]] = None,
-    ) -> Tuple[pd.DataFrame, Dict[int, int]]:
-        """Convert candidate paths into a table useful for later Shapley.
+def nearest_neighbors(centroids_df: pd.DataFrame, k: int = SPATIAL_NEIGHBOR_COUNT) -> Dict[int, List[Tuple[int, float]]]:
+    rows = centroids_df[["zone_id", "centroid_x", "centroid_y"]].to_numpy(float)
+    out: Dict[int, List[Tuple[int, float]]] = {}
+    for zone, x, y in rows:
+        distances = []
+        for other, ox, oy in rows:
+            if int(zone) == int(other):
+                continue
+            miles = math.hypot(x - ox, y - oy) / 5280.0
+            distances.append((int(other), float(miles)))
+        distances.sort(key=lambda p: p[1])
+        out[int(zone)] = distances[: int(k)]
+    return out
 
-        Players are optional nodes that appear in candidate paths but not in the
-        baseline path. Each path receives a bitmask of required optional nodes.
-        A later Shapley module can evaluate v(S) by checking which path masks are
-        subsets of a coalition mask.
-        """
-        if baseline_path is None:
-            if paths:
-                baseline_path = paths[0].path
-            else:
-                baseline_path = [int(origin)]
-        baseline_nodes = set(int(z) for z in baseline_path)
-        optional_nodes = sorted({int(z) for p in paths for z in p.path if int(z) not in baseline_nodes})
-        node_to_bit = {z: i for i, z in enumerate(optional_nodes)}
 
-        records = []
-        for path_id, pr in enumerate(paths):
-            mask = 0
-            required = []
-            for z in pr.path:
-                z = int(z)
-                if z in node_to_bit:
-                    mask |= 1 << node_to_bit[z]
-                    required.append(z)
-            records.append(
-                {
-                    "path_id": path_id,
-                    "algorithm": pr.algorithm,
-                    "destination": int(pr.path[-1]),
-                    "path": "-".join(str(x) for x in pr.path),
-                    "required_optional_nodes": ",".join(str(x) for x in required),
-                    "required_mask": mask,
-                    "travel_time_min": pr.total_travel_time,
-                    "distance_miles": pr.total_distance,
-                    "dest_expected_income": pr.total_expected_income,
-                    "route_utility": pr.route_utility,
-                }
-            )
-        return pd.DataFrame(records), node_to_bit
+def build_node_metrics(
+    pickup_agg: pd.DataFrame,
+    dropoff_agg: pd.DataFrame,
+    od_agg: pd.DataFrame,
+    centroids_df: pd.DataFrame,
+    service_days: int,
+    competition_scenario: str = DEFAULT_COMPETITION_SCENARIO,
+) -> pd.DataFrame:
+    """Build demand and latent vacant-supply metrics for every 15-minute zone cell.
 
-    # -------------------------------------------------------------------------
-    # MDP / RL helpers
-    # -------------------------------------------------------------------------
+    TLC trip data observe successful pickups and dropoffs, not idle taxis. The supply model
+    therefore produces a *relative latent competition index*, not a claimed exact fleet
+    count. Recent dropoffs add potential vacant taxis, pickups consume them, and positive
+    stocks diffuse partially to neighbouring zones. The absolute scale is calibrated so the
+    median medium-scenario wait equals REFERENCE_WAIT_MINUTES.
+    """
+    if competition_scenario not in COMPETITION_SCENARIO_MULTIPLIERS:
+        raise ValueError(f"Unknown competition scenario: {competition_scenario}")
+    zones = centroids_df["zone_id"].astype(int).tolist()
+    full = pd.MultiIndex.from_product([range(N_TIME_BINS), zones], names=["time_bin", "zone_id"]).to_frame(index=False)
+    full = full.merge(pickup_agg, on=["time_bin", "zone_id"], how="left")
+    full = full.merge(dropoff_agg, on=["time_bin", "zone_id"], how="left")
+    full[["pickup_count", "dropoff_count"]] = full[["pickup_count", "dropoff_count"]].fillna(0.0)
+    exposure = max(1.0, float(service_days))
+    full["raw_pickups_per_bin_day"] = full["pickup_count"] / exposure
+    full["raw_dropoffs_per_bin_day"] = full["dropoff_count"] / exposure
 
-    def available_actions(
-        self,
-        zone: int,
-        spatial_only: bool = True,
-        include_stay: bool = True,
-        candidate_nodes: Optional[set[int]] = None,
-        max_actions: Optional[int] = None,
-    ) -> List[int]:
-        """Actions are next zones. Default uses one-hop spatial neighbors + stay.
+    zone_global = full.groupby("zone_id")["pickup_count"].sum() / (exposure * N_TIME_BINS)
+    time_global = full.groupby("time_bin")["pickup_count"].sum() / (exposure * max(1, len(zones)))
+    grand = float(full["pickup_count"].sum() / (exposure * N_TIME_BINS * max(1, len(zones))))
+    nearest = nearest_neighbors(centroids_df)
+    raw_map = {(int(r.time_bin), int(r.zone_id)): float(r.raw_pickups_per_bin_day) for r in full.itertuples(index=False)}
 
-        This keeps the dynamic problem small and stable. Historical OD edges are
-        dense, so they are not used by default as actions.
-        """
-        zone = int(zone)
-        if spatial_only:
-            SG = self._spatial_only_graph()
-            actions = [int(v) for v in SG.neighbors(zone)] if zone in SG else []
-        else:
-            actions = [int(v) for v in self.G.successors(zone)]
-        if candidate_nodes is not None:
-            actions = [a for a in actions if a in candidate_nodes]
-        if include_stay and zone not in actions:
-            actions.append(zone)
-        if max_actions is not None and len(actions) > max_actions:
-            # Keep most promising actions by immediate reward proxy.
-            actions = sorted(actions, key=lambda a: self._action_reward(zone, a, DEFAULT_TIME_BIN_MIN)[0], reverse=True)[
-                :max_actions
-            ]
-        return actions
-
-    def _move_stats(self, zone: int, action_zone: int, default_step_min: float = DEFAULT_TIME_BIN_MIN) -> Tuple[float, float]:
-        zone = int(zone)
-        action_zone = int(action_zone)
-        if zone == action_zone:
-            return float(default_step_min), 0.0
-        if self.G.has_edge(zone, action_zone):
-            d = self.G[zone][action_zone]
-            return float(d.get("avg_duration_min", default_step_min)), float(d.get("avg_distance_miles", 0.0))
-        # Fallback if a spatial neighbor somehow lacks directed edge.
-        miles = self.centroid_distance_miles(zone, action_zone)
-        return miles_to_minutes(miles), miles
-
-    def _action_reward(
-        self,
-        zone: int,
-        action_zone: int,
-        default_step_min: float = DEFAULT_TIME_BIN_MIN,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        uniform_income: bool = False,
-    ) -> Tuple[float, float, float]:
-        travel_time, distance = self._move_stats(zone, action_zone, default_step_min)
-        reward = self.recommendation_utility(
-            origin=zone,
-            destination=action_zone,
-            travel_time_min=travel_time,
-            distance_miles=distance,
-            time_budget_min=time_budget_min,
-            uniform_income=uniform_income,
+    posterior, temporal_priors, spatial_priors, node_conf, layers = [], [], [], [], []
+    for r in full.itertuples(index=False):
+        tb, zone = int(r.time_bin), int(r.zone_id)
+        temporal_vals, temporal_w = [], []
+        for delta in range(1, TEMPORAL_WINDOW_BINS + 1):
+            weight = math.exp(-delta / TEMPORAL_DECAY_BINS)
+            for other_tb in ((tb - delta) % N_TIME_BINS, (tb + delta) % N_TIME_BINS):
+                temporal_vals.append(raw_map[(other_tb, zone)])
+                temporal_w.append(weight)
+        temporal = weighted_mean(temporal_vals, temporal_w, float(zone_global.get(zone, grand)))
+        spatial_vals = [raw_map[(tb, n)] for n, _ in nearest.get(zone, [])]
+        spatial_w = [math.exp(-dist / SPATIAL_DECAY_MILES) for _, dist in nearest.get(zone, [])]
+        spatial = weighted_mean(spatial_vals, spatial_w, grand)
+        prior = weighted_mean(
+            [temporal, spatial, float(zone_global.get(zone, grand)), float(time_global.get(tb, grand)), grand],
+            [4.0, 2.0, 3.0, 2.0, 1.0], grand,
         )
-        return reward, travel_time, distance
+        count = float(r.pickup_count)
+        reliability = count / (count + NODE_PRIOR_STRENGTH)
+        post = reliability * float(r.raw_pickups_per_bin_day) + (1.0 - reliability) * prior
+        conf = float(np.clip(count / (count + NODE_PRIOR_STRENGTH), MIN_CONFIDENCE, 0.995))
+        posterior.append(max(post, 1e-8)); temporal_priors.append(temporal); spatial_priors.append(spatial); node_conf.append(conf)
+        layers.append("observed_dense_eb" if count >= 20 else "observed_sparse_eb" if count > 0 else "temporal_spatial_eb" if temporal > 0 else "global_prior")
 
-    def finite_horizon_value_iteration(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        bin_minutes: float = DEFAULT_TIME_BIN_MIN,
-        gamma: float = DEFAULT_GAMMA,
-        candidate_nodes: Optional[Sequence[int]] = None,
-        spatial_only_actions: bool = True,
-        uniform_income: bool = False,
-        max_actions_per_state: Optional[int] = 12,
-    ) -> Tuple[pd.DataFrame, Dict[Tuple[int, int], float], Dict[Tuple[int, int], int]]:
-        """Finite-horizon value iteration / backward dynamic programming.
+    full["posterior_pickups_per_bin_day"] = posterior
+    full["temporal_pickup_prior"] = temporal_priors
+    full["spatial_pickup_prior"] = spatial_priors
+    full["node_confidence"] = node_conf
+    full["node_imputation_layer"] = layers
+    full["service_days"] = int(service_days)
 
-        State: (zone, time_bin). Action: move to a neighboring zone or stay.
-        Transition: deterministic to action_zone after one or more time bins.
-        Reward: immediate opportunity utility at the action zone minus travel cost.
-        """
-        self.validate_zone(origin)
-        horizon_bins = int(math.ceil(time_budget_min / bin_minutes))
-        if candidate_nodes is None:
-            candidate_nodes = self.candidate_opportunity_nodes(origin, time_budget_min, max_candidates=80)
-            candidate_nodes = list(set(candidate_nodes) | {int(origin)})
-        state_nodes = set(int(z) for z in candidate_nodes if int(z) in self.G.nodes)
-        state_nodes.add(int(origin))
+    # Latent vacant-taxi stock. Successful dropoffs create potential vacant taxis, recent
+    # demand attracts additional taxis, and successful pickups deplete the local stock. The
+    # quantity is a calibrated relative supply proxy, not an observed fleet count.
+    pickup_matrix = full.pivot(index="time_bin", columns="zone_id", values="posterior_pickups_per_bin_day").reindex(index=range(N_TIME_BINS), columns=zones).fillna(0.0).to_numpy(float)
+    drop_matrix = full.pivot(index="time_bin", columns="zone_id", values="raw_dropoffs_per_bin_day").reindex(index=range(N_TIME_BINS), columns=zones).fillna(0.0).to_numpy(float)
 
-        V: Dict[Tuple[int, int], float] = {(z, horizon_bins): 0.0 for z in state_nodes}
-        policy: Dict[Tuple[int, int], int] = {}
+    # Initialise from a decayed history so the first time bin is not treated as an empty city.
+    stock = np.full(len(zones), SUPPLY_BASE_FLOOR, dtype=float)
+    for lag in range(1, VACANT_HISTORY_BINS + 1):
+        tb = (-lag) % N_TIME_BINS
+        weight = VACANT_STOCK_PERSISTENCE ** (lag - 1)
+        stock += weight * (drop_matrix[tb] + VACANT_DEMAND_ATTRACTION * pickup_matrix[tb])
 
-        for tbin in range(horizon_bins - 1, -1, -1):
-            for z in state_nodes:
-                actions = self.available_actions(
-                    z,
-                    spatial_only=spatial_only_actions,
-                    include_stay=True,
-                    candidate_nodes=state_nodes,
-                    max_actions=max_actions_per_state,
+    stock_history = np.zeros_like(pickup_matrix)
+    # Iterate synthetic days until the daily cycle is effectively stable.
+    for _ in range(30):
+        for tb in range(N_TIME_BINS):
+            prev_tb = (tb - 1) % N_TIME_BINS
+            incoming = drop_matrix[prev_tb] + VACANT_DEMAND_ATTRACTION * pickup_matrix[prev_tb]
+            stock = np.maximum(
+                SUPPLY_BASE_FLOOR,
+                VACANT_STOCK_PERSISTENCE * stock + incoming - VACANT_PICKUP_DEPLETION * pickup_matrix[tb],
+            )
+            stock_history[tb] = stock
+
+    zone_index = {z: i for i, z in enumerate(zones)}
+    diffused = stock_history.copy()
+    for tb in range(N_TIME_BINS):
+        for z in zones:
+            zi = zone_index[z]
+            vals, wts = [], []
+            for neigh, dist in nearest.get(z, []):
+                vals.append(stock_history[tb, zone_index[neigh]])
+                wts.append(math.exp(-dist / SPATIAL_DECAY_MILES))
+            neighbour_supply = weighted_mean(vals, wts, stock_history[tb, zi])
+            diffused[tb, zi] = (1.0 - NEIGHBOR_SUPPLY_DIFFUSION) * stock_history[tb, zi] + NEIGHBOR_SUPPLY_DIFFUSION * neighbour_supply
+
+    # Queue-pressure proxy: more latent taxis per passenger arrival means longer wait.
+    demand_floor = max(0.05, float(np.nanmedian(pickup_matrix[pickup_matrix > 0])) * 0.05 if np.any(pickup_matrix > 0) else 0.05)
+    queue_pressure = (diffused + SUPPLY_BASE_FLOOR) / (pickup_matrix + demand_floor)
+    positive_pressure = queue_pressure[np.isfinite(queue_pressure) & (queue_pressure > 0)]
+    calibration = REFERENCE_WAIT_MINUTES / float(np.median(positive_pressure) if len(positive_pressure) else 1.0)
+
+    # Airport zones have institutional queues not fully recoverable from trips alone.
+    airport_mask = centroids_df.set_index("zone_id").reindex(zones)["zone_name"].fillna("").str.contains("airport", case=False).to_numpy(bool)
+    airport_adjustment = np.where(airport_mask[None, :], AIRPORT_QUEUE_MULTIPLIER, 1.0)
+    waits = {}
+    for scenario, multiplier in COMPETITION_SCENARIO_MULTIPLIERS.items():
+        waits[scenario] = np.clip(calibration * queue_pressure * multiplier * airport_adjustment, MIN_EXPECTED_WAIT_MINUTES, MAX_EXPECTED_WAIT_MINUTES)
+
+    supply_rows, pressure_rows = [], []
+    wait_low, wait_med, wait_high = [], [], []
+    for r in full.itertuples(index=False):
+        ti, zi = int(r.time_bin), zone_index[int(r.zone_id)]
+        supply_rows.append(float(diffused[ti, zi]))
+        pressure_rows.append(float(queue_pressure[ti, zi]))
+        wait_low.append(float(waits["low"][ti, zi])); wait_med.append(float(waits["medium"][ti, zi])); wait_high.append(float(waits["high"][ti, zi]))
+    full["latent_vacant_supply_index"] = supply_rows
+    full["competition_ratio"] = pressure_rows
+    full["expected_wait_min_low"] = wait_low
+    full["expected_wait_min_medium"] = wait_med
+    full["expected_wait_min_high"] = wait_high
+    full["expected_wait_min"] = full[f"expected_wait_min_{competition_scenario}"]
+    full["competition_scenario"] = competition_scenario
+    full["pickup_probability_15m"] = 1.0 - np.exp(-TIME_BIN_MINUTES / full["expected_wait_min"].clip(lower=1e-6))
+    # Queue-equivalent competitors follow E[W] ≈ (V+1)/lambda. They are model-implied
+    # equivalents used for interpretation and sensitivity analysis, not directly observed taxis.
+    arrival_rate_per_minute = full["posterior_pickups_per_bin_day"].clip(lower=1e-8) / TIME_BIN_MINUTES
+    for scenario in COMPETITION_SCENARIO_MULTIPLIERS:
+        full[f"estimated_competitors_equivalent_{scenario}"] = (
+            full[f"expected_wait_min_{scenario}"] * arrival_rate_per_minute - 1.0
+        ).clip(lower=0.0)
+    full["estimated_competitors_equivalent"] = full[f"estimated_competitors_equivalent_{competition_scenario}"]
+
+    full["expected_trip_revenue"] = 0.0
+    full["expected_trip_duration_min"] = 15.0
+    full["expected_trip_distance_miles"] = 2.0
+    return full
+
+def prepare_observed_tables(od_agg: pd.DataFrame) -> pd.DataFrame:
+    out = od_agg.copy()
+    n = out["trip_count"].clip(lower=1)
+    out["observed_avg_driver_revenue"] = out["revenue_sum"] / n
+    out["observed_avg_duration_min"] = out["duration_sum"] / n
+    out["observed_avg_distance_miles"] = out["distance_sum"] / n
+    out["observed_revenue_std"] = [pooled_std(a, b, c) for a, b, c in zip(out["revenue_sum"], out["revenue_sq_sum"], out["trip_count"])]
+    out["observed_duration_std"] = [pooled_std(a, b, c) for a, b, c in zip(out["duration_sum"], out["duration_sq_sum"], out["trip_count"])]
+    out["observed_distance_std"] = [pooled_std(a, b, c) for a, b, c in zip(out["distance_sum"], out["distance_sq_sum"], out["trip_count"])]
+    return out
+
+
+def build_time_profiles(observed: pd.DataFrame) -> pd.DataFrame:
+    """Estimate time-of-day speed and revenue-per-mile profiles from observed trips."""
+    work = observed.copy()
+    work = work[(work["observed_avg_distance_miles"] > 0) & (work["observed_avg_duration_min"] > 0)].copy()
+    work["speed_mph"] = 60.0 * work["observed_avg_distance_miles"] / work["observed_avg_duration_min"]
+    work["revenue_per_mile"] = work["observed_avg_driver_revenue"] / work["observed_avg_distance_miles"].clip(lower=0.1)
+    rows = []
+    global_speed = weighted_mean(work["speed_mph"], work["trip_count"], FALLBACK_SPEED_MPH)
+    global_rpm = weighted_mean(work["revenue_per_mile"], work["trip_count"], 4.0)
+    for tb in range(N_TIME_BINS):
+        g = work[work["time_bin"] == tb]
+        speed = weighted_mean(g["speed_mph"], g["trip_count"], global_speed)
+        rpm = weighted_mean(g["revenue_per_mile"], g["trip_count"], global_rpm)
+        rows.append({"time_bin": tb, "speed_mph": float(np.clip(speed, MIN_SPEED_MPH, MAX_SPEED_MPH)), "revenue_per_mile": max(0.1, rpm)})
+    return pd.DataFrame(rows)
+
+
+def build_dynamic_od_metrics(
+    observed: pd.DataFrame,
+    global_od: pd.DataFrame,
+    node_metrics: pd.DataFrame,
+    centroids_df: pd.DataFrame,
+    time_profiles: pd.DataFrame,
+) -> pd.DataFrame:
+    zones = centroids_df["zone_id"].astype(int).tolist()
+    centroids = {int(r.zone_id): (float(r.centroid_x), float(r.centroid_y)) for r in centroids_df.itertuples(index=False)}
+    neighbors = nearest_neighbors(centroids_df)
+    gravity = fit_gravity_prior(global_od)
+    speed_by_bin = dict(zip(time_profiles["time_bin"].astype(int), time_profiles["speed_mph"].astype(float)))
+    global_speed = float(np.average(time_profiles["speed_mph"]))
+    duration_calibration = build_duration_calibration(observed, centroids_df, time_profiles)
+    zone_meta = centroids_df.set_index("zone_id")[["borough", "zone_name"]].to_dict("index")
+
+    obs_map = {(int(r.time_bin), int(r.origin), int(r.destination)): r for r in observed.itertuples(index=False)}
+    by_pair: Dict[Tuple[int, int], List[object]] = defaultdict(list)
+    for r in observed.itertuples(index=False):
+        by_pair[(int(r.origin), int(r.destination))].append(r)
+    global_map = {(int(r.origin), int(r.destination)): r for r in global_od.itertuples(index=False)}
+    global_origin_lists: Dict[int, List[Tuple[int, float]]] = defaultdict(list)
+    dest_popularity = global_od.groupby("destination")["trip_count"].sum().sort_values(ascending=False)
+    popular_dests = [int(x) for x in dest_popularity.head(MAX_DESTINATIONS_PER_ORIGIN).index]
+    for r in global_od.itertuples(index=False):
+        global_origin_lists[int(r.origin)].append((int(r.destination), float(r.trip_count)))
+    for origin in global_origin_lists:
+        global_origin_lists[origin].sort(key=lambda x: x[1], reverse=True)
+
+    current_groups = {(int(tb), int(origin)): g for (tb, origin), g in observed.groupby(["time_bin", "origin"], sort=False)}
+    node_rate = {(int(r.time_bin), int(r.zone_id)): float(r.posterior_pickups_per_bin_day) for r in node_metrics.itertuples(index=False)}
+    records: List[Dict[str, object]] = []
+
+    for tb in range(N_TIME_BINS):
+        for origin in zones:
+            score: Dict[int, float] = defaultdict(float)
+            group = current_groups.get((tb, origin))
+            if group is not None:
+                for r in group.itertuples(index=False):
+                    score[int(r.destination)] += float(r.trip_count)
+            for dest, cnt in global_origin_lists.get(origin, [])[: MAX_DESTINATIONS_PER_ORIGIN]:
+                score[dest] += GLOBAL_OD_DISCOUNT * cnt
+            for rank, dest in enumerate(popular_dests):
+                score[dest] += max(0.1, 1.0 - rank / max(1, len(popular_dests)))
+            if not score:
+                for dest in popular_dests:
+                    score[dest] = 1.0
+            candidates = [d for d, _ in sorted(score.items(), key=lambda x: x[1], reverse=True)[:MAX_DESTINATIONS_PER_ORIGIN]]
+            if origin not in candidates and len(candidates) < MAX_DESTINATIONS_PER_ORIGIN:
+                candidates.append(origin)
+
+            # Prior destination probabilities from full-history origin flows plus gravity distance decay.
+            global_total = sum(cnt for _, cnt in global_origin_lists.get(origin, []))
+            prior_probs = []
+            obs_counts = []
+            row_estimates = []
+            for destination in candidates:
+                obs = obs_map.get((tb, origin, destination))
+                obs_count = float(obs.trip_count) if obs is not None else 0.0
+                obs_counts.append(obs_count)
+                global_row = global_map.get((origin, destination))
+                global_count = float(global_row.trip_count) if global_row is not None else 0.0
+                distance_struct = centroid_distance_miles(origin, destination, centroids)
+                gravity_prob = math.exp(-distance_struct / 8.0)
+                global_prob = global_count / global_total if global_total > 0 else 0.0
+                prior_probs.append(0.8 * global_prob + 0.2 * gravity_prob)
+
+                temporal_rows = []
+                temporal_weights = []
+                for r in by_pair.get((origin, destination), []):
+                    dist = circular_bin_distance(tb, int(r.time_bin))
+                    if 0 < dist <= TEMPORAL_WINDOW_BINS:
+                        w = float(r.trip_count) * math.exp(-dist / TEMPORAL_DECAY_BINS)
+                        temporal_rows.append(r)
+                        temporal_weights.append(w)
+                temporal_count = float(sum(temporal_weights))
+
+                spatial_values_rev = []
+                spatial_values_dur = []
+                spatial_values_dist = []
+                spatial_weights = []
+                for neigh, dist in neighbors.get(origin, []):
+                    r = global_map.get((neigh, destination))
+                    if r is not None:
+                        w = float(r.trip_count) * math.exp(-dist / SPATIAL_DECAY_MILES)
+                        spatial_values_rev.append(float(r.avg_driver_revenue))
+                        spatial_values_dur.append(float(r.avg_duration_min))
+                        spatial_values_dist.append(float(r.avg_distance_miles))
+                        spatial_weights.append(w)
+                for neigh, dist in neighbors.get(destination, []):
+                    r = global_map.get((origin, neigh))
+                    if r is not None:
+                        w = float(r.trip_count) * math.exp(-dist / SPATIAL_DECAY_MILES)
+                        spatial_values_rev.append(float(r.avg_driver_revenue))
+                        spatial_values_dur.append(float(r.avg_duration_min))
+                        spatial_values_dist.append(float(r.avg_distance_miles))
+                        spatial_weights.append(w)
+
+                time_speed = float(np.clip(speed_by_bin.get(tb, FALLBACK_SPEED_MPH), MIN_SPEED_MPH, MAX_SPEED_MPH))
+                fallback_duration, duration_calibration_multiplier, duration_band, duration_borough_pair = calibrated_duration_prior(
+                    origin, int(destination), tb, distance_struct, time_speed, zone_meta, duration_calibration
                 )
-                best_value = -np.inf
-                best_action = z
-                for a in actions:
-                    reward, travel_time, _distance = self._action_reward(
-                        z,
-                        a,
-                        default_step_min=bin_minutes,
-                        time_budget_min=time_budget_min,
-                        uniform_income=uniform_income,
-                    )
-                    step_bins = max(1, int(math.ceil(travel_time / bin_minutes)))
-                    next_t = min(horizon_bins, tbin + step_bins)
-                    value = reward + gamma * V.get((int(a), next_t), 0.0)
-                    if value > best_value:
-                        best_value = value
-                        best_action = int(a)
-                V[(int(z), tbin)] = float(best_value)
-                policy[(int(z), tbin)] = int(best_action)
-
-        records = []
-        for (z, tbin), a in sorted(policy.items()):
-            reward, travel_time, distance = self._action_reward(
-                z, a, default_step_min=bin_minutes, time_budget_min=time_budget_min, uniform_income=uniform_income
-            )
-            records.append(
-                {
-                    "zone": z,
-                    "time_bin": tbin,
-                    "minutes_elapsed": tbin * bin_minutes,
-                    "best_action_zone": a,
-                    "best_action_name": self.node_info.get(a, {}).get("zone_name", ""),
-                    "value": V[(z, tbin)],
-                    "immediate_reward": reward,
-                    "action_travel_time_min": travel_time,
-                    "action_distance_miles": distance,
-                }
-            )
-        return pd.DataFrame(records), V, policy
-
-    def tabular_q_learning(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        bin_minutes: float = DEFAULT_TIME_BIN_MIN,
-        gamma: float = DEFAULT_GAMMA,
-        episodes: int = DEFAULT_Q_EPISODES,
-        alpha: float = DEFAULT_Q_ALPHA,
-        epsilon_start: float = DEFAULT_Q_EPSILON_START,
-        epsilon_end: float = DEFAULT_Q_EPSILON_END,
-        candidate_nodes: Optional[Sequence[int]] = None,
-        spatial_only_actions: bool = True,
-        uniform_income: bool = False,
-        seed: int = 42,
-        max_actions_per_state: Optional[int] = 12,
-    ) -> Tuple[pd.DataFrame, Dict[Tuple[int, int, int], float]]:
-        """Stable tabular Q-learning baseline with epsilon-greedy exploration."""
-        rng = random.Random(seed)
-        self.validate_zone(origin)
-        horizon_bins = int(math.ceil(time_budget_min / bin_minutes))
-        if candidate_nodes is None:
-            candidate_nodes = self.candidate_opportunity_nodes(origin, time_budget_min, max_candidates=80)
-            candidate_nodes = list(set(candidate_nodes) | {int(origin)})
-        state_nodes = set(int(z) for z in candidate_nodes if int(z) in self.G.nodes)
-        state_nodes.add(int(origin))
-
-        Q: Dict[Tuple[int, int, int], float] = {}
-
-        def q_value(z: int, tbin: int, a: int) -> float:
-            return Q.get((int(z), int(tbin), int(a)), 0.0)
-
-        def best_action(z: int, tbin: int) -> int:
-            actions = self.available_actions(
-                z,
-                spatial_only=spatial_only_actions,
-                include_stay=True,
-                candidate_nodes=state_nodes,
-                max_actions=max_actions_per_state,
-            )
-            return max(actions, key=lambda a: q_value(z, tbin, a)) if actions else int(z)
-
-        for ep in range(max(1, episodes)):
-            frac = ep / max(1, episodes - 1)
-            epsilon = epsilon_start + frac * (epsilon_end - epsilon_start)
-            z = int(origin)
-            tbin = 0
-            while tbin < horizon_bins:
-                actions = self.available_actions(
-                    z,
-                    spatial_only=spatial_only_actions,
-                    include_stay=True,
-                    candidate_nodes=state_nodes,
-                    max_actions=max_actions_per_state,
+                gravity_revenue = max(
+                    0.0,
+                    gravity["intercept"] + gravity["distance"] * distance_struct + gravity["duration"] * fallback_duration,
                 )
-                if not actions:
-                    break
-                if rng.random() < epsilon:
-                    a = rng.choice(actions)
+                global_revenue = float(global_row.avg_driver_revenue) if global_row is not None else gravity["mean_revenue"]
+                global_duration = (
+                    float(global_row.avg_duration_min) * global_speed / time_speed
+                    if global_row is not None else fallback_duration
+                )
+                global_distance = float(global_row.avg_distance_miles) if global_row is not None else distance_struct
+                global_std_rev = float(global_row.revenue_std) if global_row is not None else max(1.0, 0.35 * gravity_revenue)
+                global_std_dur = float(global_row.duration_std) if global_row is not None else max(2.0, 0.30 * fallback_duration)
+                global_std_dist = float(global_row.distance_std) if global_row is not None else max(0.25, 0.25 * distance_struct)
+
+                temporal_rev = weighted_mean(
+                    [float(r.observed_avg_driver_revenue) for r in temporal_rows],
+                    temporal_weights,
+                    global_revenue,
+                )
+                temporal_dur = weighted_mean(
+                    [float(r.observed_avg_duration_min) for r in temporal_rows],
+                    temporal_weights,
+                    global_duration,
+                )
+                temporal_dist = weighted_mean(
+                    [float(r.observed_avg_distance_miles) for r in temporal_rows],
+                    temporal_weights,
+                    global_distance,
+                )
+                spatial_rev = weighted_mean(spatial_values_rev, spatial_weights, global_revenue)
+                spatial_dur = weighted_mean(spatial_values_dur, spatial_weights, global_duration)
+                spatial_dist = weighted_mean(spatial_values_dist, spatial_weights, global_distance)
+                spatial_weight = min(sum(spatial_weights), 20.0)
+                global_weight = min(global_count * GLOBAL_OD_DISCOUNT, 25.0)
+
+                obs_rev = float(obs.observed_avg_driver_revenue) if obs is not None else np.nan
+                obs_dur = float(obs.observed_avg_duration_min) if obs is not None else np.nan
+                obs_dist = float(obs.observed_avg_distance_miles) if obs is not None else np.nan
+                weights = [obs_count, min(temporal_count, 20.0), spatial_weight, global_weight, GRAVITY_PRIOR_STRENGTH]
+                rev = weighted_mean([obs_rev, temporal_rev, spatial_rev, global_revenue, gravity_revenue], weights, gravity_revenue)
+                dur = geometric_weighted_mean(
+                    [obs_dur, temporal_dur, spatial_dur, global_duration, fallback_duration],
+                    weights, fallback_duration,
+                )
+                # Keep a calibrated structural floor so sparse long trips are not collapsed
+                # toward the city-wide mean by empirical-Bayes shrinkage.
+                dur = max(dur, 0.85 * fallback_duration)
+                dist_value = weighted_mean([obs_dist, temporal_dist, spatial_dist, global_distance, distance_struct], weights, distance_struct)
+                effective_n = obs_count + 0.5 * temporal_count + 0.25 * spatial_weight + 0.2 * global_count
+                confidence = float(np.clip(effective_n / (effective_n + OD_OBS_PRIOR_STRENGTH), MIN_CONFIDENCE, 0.995))
+                if obs_count >= 20:
+                    layer = "observed_dense_eb"
+                elif obs_count > 0:
+                    layer = "observed_sparse_eb"
+                elif temporal_count > 0:
+                    layer = "temporal_eb"
+                elif spatial_weight > 0:
+                    layer = "spatial_eb"
+                elif global_count > 0:
+                    layer = "global_od_eb"
                 else:
-                    a = best_action(z, tbin)
-                reward, travel_time, _distance = self._action_reward(
-                    z,
-                    a,
-                    default_step_min=bin_minutes,
-                    time_budget_min=time_budget_min,
-                    uniform_income=uniform_income,
-                )
-                step_bins = max(1, int(math.ceil(travel_time / bin_minutes)))
-                next_t = min(horizon_bins, tbin + step_bins)
-                done = next_t >= horizon_bins
-                if done:
-                    target = reward
-                else:
-                    next_actions = self.available_actions(
-                        a,
-                        spatial_only=spatial_only_actions,
-                        include_stay=True,
-                        candidate_nodes=state_nodes,
-                        max_actions=max_actions_per_state,
-                    )
-                    next_best = max([q_value(a, next_t, aa) for aa in next_actions], default=0.0)
-                    target = reward + gamma * next_best
-                old = q_value(z, tbin, a)
-                Q[(z, tbin, a)] = old + alpha * (target - old)
-                z = int(a)
-                tbin = next_t
+                    layer = "gravity_prior"
 
-        records = []
-        for z in sorted(state_nodes):
-            for tbin in range(horizon_bins):
-                actions = self.available_actions(
-                    z,
-                    spatial_only=spatial_only_actions,
-                    include_stay=True,
-                    candidate_nodes=state_nodes,
-                    max_actions=max_actions_per_state,
-                )
-                if not actions:
-                    continue
-                a = max(actions, key=lambda aa: q_value(z, tbin, aa))
-                records.append(
+                row_estimates.append(
                     {
-                        "zone": z,
-                        "time_bin": tbin,
-                        "minutes_elapsed": tbin * bin_minutes,
-                        "best_action_zone": int(a),
-                        "best_action_name": self.node_info.get(int(a), {}).get("zone_name", ""),
-                        "q_value": q_value(z, tbin, a),
+                        "time_bin": tb,
+                        "origin": origin,
+                        "destination": int(destination),
+                        "observed_trip_count": obs_count,
+                        "avg_driver_revenue": rev,
+                        "avg_duration_min": max(1.0, dur),
+                        "avg_distance_miles": max(0.01, dist_value),
+                        "revenue_std": float(obs.observed_revenue_std) if obs is not None and obs_count >= 2 else global_std_rev,
+                        "duration_std": float(obs.observed_duration_std) if obs is not None and obs_count >= 2 else global_std_dur,
+                        "distance_std": float(obs.observed_distance_std) if obs is not None and obs_count >= 2 else global_std_dist,
+                        "confidence": confidence,
+                        "imputation_layer": layer,
+                        "effective_sample_size": effective_n,
+                        "observed_weight": obs_count,
+                        "temporal_weight": min(temporal_count, 20.0),
+                        "spatial_weight": spatial_weight,
+                        "global_weight": global_weight,
+                        "gravity_weight": GRAVITY_PRIOR_STRENGTH,
+                        "observed_avg_driver_revenue": obs_rev,
+                        "observed_avg_duration_min": obs_dur,
+                        "observed_avg_distance_miles": obs_dist,
+                        "temporal_revenue_prior": temporal_rev,
+                        "temporal_duration_prior": temporal_dur,
+                        "temporal_distance_prior": temporal_dist,
+                        "spatial_revenue_prior": spatial_rev,
+                        "spatial_duration_prior": spatial_dur,
+                        "spatial_distance_prior": spatial_dist,
+                        "global_revenue_prior": global_revenue,
+                        "global_duration_prior": global_duration,
+                        "global_distance_prior": global_distance,
+                        "gravity_revenue_prior": gravity_revenue,
+                        "gravity_duration_prior": fallback_duration,
+                        "gravity_distance_prior": distance_struct,
+                        "calibrated_duration_prior": fallback_duration,
+                        "duration_calibration_multiplier": duration_calibration_multiplier,
+                        "duration_distance_band": duration_band,
+                        "duration_borough_pair": duration_borough_pair,
                     }
                 )
-        return pd.DataFrame(records), Q
 
-    def export_dqn_training_records(
-        self,
-        origin: int,
-        time_budget_min: float = DEFAULT_TIME_BUDGET_MIN,
-        bin_minutes: float = DEFAULT_TIME_BIN_MIN,
-        candidate_nodes: Optional[Sequence[int]] = None,
-        spatial_only_actions: bool = True,
-        uniform_income: bool = False,
-        max_actions_per_state: Optional[int] = 12,
-    ) -> pd.DataFrame:
-        """Export transition records for a future DQN module.
+            prior_sum = sum(max(0.0, p) for p in prior_probs)
+            if prior_sum <= 0:
+                prior_probs = [1.0 / len(candidates)] * len(candidates)
+            else:
+                prior_probs = [max(0.0, p) / prior_sum for p in prior_probs]
+            total_obs = sum(obs_counts)
+            numerators = [c + OD_DIRICHLET_STRENGTH * p for c, p in zip(obs_counts, prior_probs)]
+            denom = sum(numerators)
+            probs = [x / denom if denom > 0 else 1.0 / len(numerators) for x in numerators]
+            origin_expected_count = max(0.0, node_rate.get((tb, origin), 0.0))
+            for rec, prob in zip(row_estimates, probs):
+                rec["destination_probability"] = float(prob)
+                rec["estimated_trip_count_per_bin_day"] = float(prob * origin_expected_count)
+                records.append(rec)
 
-        This keeps the core environment stable and dependency-light. A future
-        PyTorch DQN can train on these (s, a, r, s') records with experience replay
-        and a target network, as described in the notes.
-        """
-        self.validate_zone(origin)
-        horizon_bins = int(math.ceil(time_budget_min / bin_minutes))
-        if candidate_nodes is None:
-            candidate_nodes = self.candidate_opportunity_nodes(origin, time_budget_min, max_candidates=80)
-            candidate_nodes = list(set(candidate_nodes) | {int(origin)})
-        state_nodes = set(int(z) for z in candidate_nodes if int(z) in self.G.nodes)
-        state_nodes.add(int(origin))
-
-        records = []
-        for z in sorted(state_nodes):
-            for tbin in range(horizon_bins):
-                actions = self.available_actions(
-                    z,
-                    spatial_only=spatial_only_actions,
-                    include_stay=True,
-                    candidate_nodes=state_nodes,
-                    max_actions=max_actions_per_state,
-                )
-                for a in actions:
-                    reward, travel_time, distance = self._action_reward(
-                        z,
-                        a,
-                        default_step_min=bin_minutes,
-                        time_budget_min=time_budget_min,
-                        uniform_income=uniform_income,
-                    )
-                    step_bins = max(1, int(math.ceil(travel_time / bin_minutes)))
-                    next_t = min(horizon_bins, tbin + step_bins)
-                    records.append(
-                        {
-                            "state_zone": z,
-                            "state_time_bin": tbin,
-                            "action_zone": int(a),
-                            "next_zone": int(a),
-                            "next_time_bin": next_t,
-                            "reward": reward,
-                            "travel_time_min": travel_time,
-                            "distance_miles": distance,
-                            "done": next_t >= horizon_bins,
-                            "state_income_score": float(self.node_info[z].get("income_score", 0.0)),
-                            "state_demand_score": float(self.node_info[z].get("demand_score", 0.0)),
-                            "action_income_score": 1.0 if uniform_income else float(self.node_info[int(a)].get("income_score", 0.0)),
-                            "action_demand_score": float(self.node_info[int(a)].get("demand_score", 0.0)),
-                        }
-                    )
-        return pd.DataFrame(records)
-
-    # -------------------------------------------------------------------------
-    # Legacy O-D corridor compatibility
-    # -------------------------------------------------------------------------
-
-    def legacy_candidate_corridor_nodes(
-        self,
-        origin: int,
-        destination: int,
-        hop_radius: int = 1,
-        max_candidates: int = 80,
-    ) -> List[int]:
-        """Old O-D corridor function kept for compatibility."""
-        base_path = self.shortest_time_path(origin, destination).path
-        candidates = set(base_path)
-
-        spatial_graph = self._spatial_only_graph()
-        for node in base_path:
-            if node not in spatial_graph:
-                continue
-            lengths = nx.single_source_shortest_path_length(spatial_graph, int(node), cutoff=hop_radius)
-            candidates.update(int(x) for x in lengths.keys())
-
-        if len(candidates) <= max_candidates:
-            return sorted(candidates)
-
-        oinfo = self.node_info[int(origin)]
-        dinfo = self.node_info[int(destination)]
-        line = LineString([(oinfo["centroid_x"], oinfo["centroid_y"]), (dinfo["centroid_x"], dinfo["centroid_y"])])
-        scored = []
-        for z in candidates:
-            info = self.node_info[int(z)]
-            dist = line.distance(Point(info["centroid_x"], info["centroid_y"]))
-            scored.append((dist, int(z)))
-        scored.sort()
-        return sorted([z for _, z in scored[:max_candidates]])
+    return pd.DataFrame(records)
 
 
-# =============================================================================
-# Build / load functions
-# =============================================================================
-
-def build_environment() -> TaxiOpportunityEnvironment:
-    ensure_output_dir()
-
-    zones = load_zone_geometries()
-    print(f"Loaded {len(zones)} taxi zone polygons")
-    print(f"CRS: {zones.crs}")
-
-    nodes_basic = build_nodes_table(zones)
-    valid_zone_ids = set(nodes_basic["zone_id"].astype(int))
-
-    spatial_edges = build_spatial_adjacency_edges(zones)
-    print(f"Spatial adjacency directed edges: {len(spatial_edges):,}")
-
-    trips = load_and_clean_all_trips(MONTHS, valid_zone_ids)
-
-    nodes = build_node_income_table(trips, nodes_basic)
-    od_weights = build_od_weights(trips)
-    print(f"Historical OD edges after filtering: {len(od_weights):,}")
-
-    edges = build_edges(spatial_edges, od_weights)
-    print(f"Final directed opportunity edges: {len(edges):,}")
-
-    G = build_networkx_graph(nodes, edges)
-    print(f"NetworkX DiGraph: nodes={G.number_of_nodes():,}, edges={G.number_of_edges():,}")
-
-    nodes_path = os.path.join(OUTPUT_DIR, f"opportunity_nodes_{MONTH_TAG}.csv")
-    od_path = os.path.join(OUTPUT_DIR, f"opportunity_od_weights_{MONTH_TAG}.csv")
-    edges_path = os.path.join(OUTPUT_DIR, f"opportunity_edges_{MONTH_TAG}.csv")
-    graph_path = os.path.join(OUTPUT_DIR, f"opportunity_graph_{MONTH_TAG}.pkl")
-
-    nodes.to_csv(nodes_path, index=False)
-    od_weights.to_csv(od_path, index=False)
-    edges.to_csv(edges_path, index=False)
-    with open(graph_path, "wb") as f:
-        pickle.dump(G, f)
-
-    print(f"Saved nodes: {nodes_path}")
-    print(f"Saved OD weights: {od_path}")
-    print(f"Saved edges: {edges_path}")
-    print(f"Saved graph: {graph_path}")
-
-    return TaxiOpportunityEnvironment(G, nodes, edges)
-
-
-def load_environment_from_processed() -> TaxiOpportunityEnvironment:
-    graph_path = os.path.join(OUTPUT_DIR, f"opportunity_graph_{MONTH_TAG}.pkl")
-    nodes_path = os.path.join(OUTPUT_DIR, f"opportunity_nodes_{MONTH_TAG}.csv")
-    edges_path = os.path.join(OUTPUT_DIR, f"opportunity_edges_{MONTH_TAG}.csv")
-    if not (os.path.exists(graph_path) and os.path.exists(nodes_path) and os.path.exists(edges_path)):
-        raise FileNotFoundError("Processed opportunity files not found. Run build_environment() first.")
-    with open(graph_path, "rb") as f:
-        G = pickle.load(f)
-    nodes = pd.read_csv(nodes_path)
-    edges = pd.read_csv(edges_path)
-    return TaxiOpportunityEnvironment(G, nodes, edges)
-
-
-# =============================================================================
-# Demo / quick test
-# =============================================================================
-
-def quick_test(env: TaxiOpportunityEnvironment) -> None:
-    origin = 132  # JFK Airport
-    print("\n=== Quick test: static algorithms + opportunity ranking ===")
-    print(f"Origin: {origin} ({env.node_info[origin].get('zone_name')})")
-    print(f"Repositioning constraint: <= {DEFAULT_MAX_REPOSITION_TIME_MIN:.0f} min and <= {DEFAULT_MAX_REPOSITION_DISTANCE_MILES:.0f} miles")
-
-    for alg in ["utility", "dijkstra_time", "dijkstra_distance", "highest_income", "highest_demand"]:
-        top = env.rank_opportunity_nodes(origin=origin, time_budget_min=120, top_k=5, algorithm=alg)
-        print(f"\nTop nodes by {alg}:")
-        cols = [
-            "destination",
-            "zone_name",
-            "borough",
-            "travel_time_min",
-            "distance_miles",
-            "avg_driver_income_per_trip",
-            "pickup_rate_per_hour",
-            "recommendation_utility",
+def attach_node_trip_expectations(node_metrics: pd.DataFrame, od_metrics: pd.DataFrame) -> pd.DataFrame:
+    weighted = od_metrics.copy()
+    for metric in ["avg_driver_revenue", "avg_duration_min", "avg_distance_miles"]:
+        weighted[f"weighted_{metric}"] = weighted["destination_probability"] * weighted[metric]
+    agg = (
+        weighted.groupby(["time_bin", "origin"], as_index=False)[
+            ["weighted_avg_driver_revenue", "weighted_avg_duration_min", "weighted_avg_distance_miles"]
         ]
-        if not top.empty:
-            print(top[cols].to_string(index=False))
-        else:
-            print("No reachable zones found.")
-
-    candidates = env.candidate_opportunity_nodes(origin=origin, time_budget_min=120, max_candidates=40)
-    print(f"\nCandidate opportunity nodes for later Shapley: {len(candidates)}")
-    print(candidates[:40])
-
-    paths = env.build_candidate_path_pool(
-        origin=origin,
-        time_budget_min=120,
-        candidate_nodes=candidates,
-        m_per_family=5,
-        final_k=10,
-    )
-    print("\nTop diverse utility-ranked candidate paths:")
-    for i, pr in enumerate(paths, 1):
-        print(
-            f"{i}. alg={pr.algorithm}, dest={pr.destination}, path={pr.path}, "
-            f"time={pr.total_travel_time:.2f} min, dist={pr.total_distance:.2f} miles, "
-            f"dest_income={pr.total_expected_income:.2f}, utility={pr.route_utility:.4f}"
+        .sum()
+        .rename(
+            columns={
+                "origin": "zone_id",
+                "weighted_avg_driver_revenue": "expected_trip_revenue",
+                "weighted_avg_duration_min": "expected_trip_duration_min",
+                "weighted_avg_distance_miles": "expected_trip_distance_miles",
+            }
         )
-
-    path_table, node_to_bit = env.shapley_ready_path_table(origin, paths)
-    shapley_path_path = os.path.join(OUTPUT_DIR, "shapley_ready_candidate_paths.csv")
-    path_table.to_csv(shapley_path_path, index=False)
-    print(f"\nSaved Shapley-ready path table: {shapley_path_path}")
-    print(f"Optional Shapley player nodes: {len(node_to_bit)}")
-
-    # Fast, small RL demonstrations. These are not heavy training tasks.
-    print("\n=== Quick test: finite-horizon value iteration on candidate nodes ===")
-    vi_df, _V, _policy = env.finite_horizon_value_iteration(
-        origin=origin,
-        time_budget_min=120,
-        candidate_nodes=candidates[:40],
-        max_actions_per_state=8,
     )
-    vi_path = os.path.join(OUTPUT_DIR, "value_iteration_policy_preview.csv")
-    vi_df.to_csv(vi_path, index=False)
-    print(f"Saved value iteration policy preview: {vi_path}")
-    print(vi_df[vi_df["time_bin"] == 0].head(10).to_string(index=False))
-
-    dqn_records = env.export_dqn_training_records(
-        origin=origin,
-        time_budget_min=120,
-        candidate_nodes=candidates[:40],
-        max_actions_per_state=8,
+    out = node_metrics.drop(columns=["expected_trip_revenue", "expected_trip_duration_min", "expected_trip_distance_miles"]).merge(
+        agg, on=["time_bin", "zone_id"], how="left"
     )
-    dqn_path = os.path.join(OUTPUT_DIR, "dqn_transition_records_preview.csv")
-    dqn_records.to_csv(dqn_path, index=False)
-    print(f"Saved DQN transition-record preview: {dqn_path}")
+    out["expected_trip_revenue"] = out["expected_trip_revenue"].fillna(0.0)
+    out["expected_trip_duration_min"] = out["expected_trip_duration_min"].fillna(15.0)
+    out["expected_trip_distance_miles"] = out["expected_trip_distance_miles"].fillna(2.0)
+    return out
 
 
-def _clean_outputs_before_full_rebuild() -> None:
-    """Clean generated outputs before a full environment rebuild.
+def build_reposition_edges(zones: gpd.GeoDataFrame, centroids_df: pd.DataFrame, global_od: pd.DataFrame) -> pd.DataFrame:
+    centroids = {int(r.zone_id): (float(r.centroid_x), float(r.centroid_y)) for r in centroids_df.itertuples(index=False)}
+    global_map = {(int(r.origin), int(r.destination)): r for r in global_od.itertuples(index=False)}
+    records = []
+    n = len(zones)
+    for i in range(n):
+        a = int(zones.iloc[i]["LocationID"])
+        ga = zones.iloc[i].geometry
+        for j in range(i + 1, n):
+            b = int(zones.iloc[j]["LocationID"])
+            gb = zones.iloc[j].geometry
+            boundary_distance = float(ga.distance(gb))
+            if not (ga.touches(gb) or ga.intersects(gb) or boundary_distance <= ADJACENCY_BUFFER_FEET):
+                continue
+            for origin, destination in ((a, b), (b, a)):
+                global_row = global_map.get((origin, destination))
+                centroid_miles = centroid_distance_miles(origin, destination, centroids)
+                if global_row is not None:
+                    duration = float(global_row.avg_duration_min)
+                    distance = float(global_row.avg_distance_miles)
+                    confidence = float(np.clip(global_row.trip_count / (global_row.trip_count + 10.0), 0.2, 0.99))
+                    source = "historical_adjacency"
+                else:
+                    distance = centroid_miles
+                    duration = max(1.0, distance / FALLBACK_SPEED_MPH * 60.0)
+                    confidence = 0.20
+                    source = "spatial_fallback"
+                records.append(
+                    {
+                        "origin": origin,
+                        "destination": destination,
+                        "duration_min": duration,
+                        "distance_miles": distance,
+                        "confidence": confidence,
+                        "edge_source": source,
+                    }
+                )
+    edges = pd.DataFrame(records)
+    if edges.empty:
+        raise RuntimeError("No reposition adjacency edges were constructed")
+    return edges
 
-    This prevents old CSV/PKL/figure files from previous experiments from being
-    mixed with the current run. The raw data/ directory is never touched.
-    """
-    try:
-        from clean_outputs import clean_generated_outputs
 
-        clean_generated_outputs(dry_run=False, verbose=True)
-    except Exception as exc:
-        print(f"[clean_outputs] Warning: cleanup step skipped: {exc}")
+def build_environment(clean_first: bool = True, competition_scenario: str = DEFAULT_COMPETITION_SCENARIO) -> DynamicTaxiEnvironment:
+    ensure_directories()
+    if competition_scenario not in COMPETITION_SCENARIO_MULTIPLIERS:
+        raise ValueError(f"Unknown competition scenario: {competition_scenario}")
+    if clean_first:
+        for p in PROCESSED_DIR.glob("dynamic_*.csv"):
+            p.unlink(missing_ok=True)
+        for name in ["dynamic_environment.pkl", "environment_build_summary.csv", "zone_centroids.csv", "reposition_edges.csv", "global_od_metrics.csv", "observed_od_metrics.pkl", "time_bin_profiles.csv"]:
+            (PROCESSED_DIR / name).unlink(missing_ok=True)
+
+    zones, centroids = read_zone_data()
+    valid_zones = set(centroids["zone_id"].astype(int))
+    od_frames, pickup_frames, dropoff_frames = [], [], []
+    total_service_days = 0
+    for month in MONTHS:
+        parquet_path = DATA_DIR / f"yellow_tripdata_{month}.parquet"
+        csv_path = DATA_DIR / f"yellow_tripdata_{month}.csv"
+        trip_path = parquet_path if parquet_path.exists() else csv_path
+        df = clean_month(trip_path, valid_zones, month)
+        od, pickups, dropoffs, days = monthly_aggregates(df)
+        od_frames.append(od); pickup_frames.append(pickups); dropoff_frames.append(dropoffs)
+        total_service_days += days
+        del df
+
+    od_agg = combine_aggregates(od_frames, ["time_bin", "origin", "destination"])
+    pickup_agg = combine_aggregates(pickup_frames, ["time_bin", "zone_id"])
+    dropoff_agg = combine_aggregates(dropoff_frames, ["time_bin", "zone_id"])
+    observed = prepare_observed_tables(od_agg)
+    global_od = make_global_od(od_agg)
+    time_profiles = build_time_profiles(observed)
+    print("Building passenger demand + latent vacant-taxi competition metrics...")
+    node_metrics = build_node_metrics(pickup_agg, dropoff_agg, od_agg, centroids, total_service_days, competition_scenario)
+    print("Building hierarchical empirical-Bayes OD metrics...")
+    od_metrics = build_dynamic_od_metrics(observed, global_od, node_metrics, centroids, time_profiles)
+    node_metrics = attach_node_trip_expectations(node_metrics, od_metrics)
+    print("Building zone-adjacency reposition graph...")
+    reposition_edges = build_reposition_edges(zones, centroids, global_od)
+
+    gravity = fit_gravity_prior(global_od)
+    duration_calibration = build_duration_calibration(observed, centroids, time_profiles)
+    metadata = {
+        "months": MONTHS,
+        "service_days": int(total_service_days),
+        "time_bin_minutes": TIME_BIN_MINUTES,
+        "n_time_bins": N_TIME_BINS,
+        "driver_revenue_share": DRIVER_REVENUE_SHARE,
+        "environment_schema_version": "4.0-final",
+        "competition_scenario": competition_scenario,
+        "competition_multipliers": COMPETITION_SCENARIO_MULTIPLIERS,
+        "wait_model": "latent supply from decayed dropoffs-pickups plus neighbour diffusion; median-calibrated queue pressure",
+        "wait_model_limitation": "latent relative competition, not directly observed absolute vacant-taxi count",
+        "gravity_model": gravity,
+        "duration_calibration": duration_calibration,
+        "duration_model": "log-scale EB with calibrated structural floor by time, distance, borough pair and airport involvement",
+        "time_speed_mph": dict(zip(time_profiles["time_bin"].astype(int), time_profiles["speed_mph"].astype(float))),
+        "time_revenue_per_mile": dict(zip(time_profiles["time_bin"].astype(int), time_profiles["revenue_per_mile"].astype(float))),
+        "global_speed_mph": float(np.average(time_profiles["speed_mph"])),
+        "pickup_scale": float(max(1.0, node_metrics["posterior_pickups_per_bin_day"].quantile(0.95))),
+        "revenue_note": "Driver revenue uses configurable share × (fare_amount + tip_amount); tolls/taxes/surcharges excluded.",
+    }
+    observed_export = observed[[
+        "time_bin", "origin", "destination", "trip_count",
+        "observed_avg_driver_revenue", "observed_avg_duration_min",
+        "observed_avg_distance_miles", "observed_revenue_std",
+        "observed_duration_std", "observed_distance_std",
+    ]].copy()
+    env = DynamicTaxiEnvironment(
+        node_metrics=node_metrics,
+        od_metrics=od_metrics,
+        reposition_edges=reposition_edges,
+        zone_centroids=centroids,
+        metadata=metadata,
+        global_od_metrics=global_od,
+        observed_od_metrics=observed_export,
+    )
+
+    node_metrics.to_csv(PROCESSED_DIR / "dynamic_node_metrics.csv", index=False)
+    od_metrics.to_csv(PROCESSED_DIR / "dynamic_od_metrics.csv", index=False)
+    global_od.to_csv(PROCESSED_DIR / "global_od_metrics.csv", index=False)
+    observed_export.to_pickle(PROCESSED_DIR / "observed_od_metrics.pkl")
+    time_profiles.to_csv(PROCESSED_DIR / "time_bin_profiles.csv", index=False)
+    reposition_edges.to_csv(PROCESSED_DIR / "reposition_edges.csv", index=False)
+    centroids.to_csv(PROCESSED_DIR / "zone_centroids.csv", index=False)
+    env.save(PROCESSED_DIR / "dynamic_environment.pkl")
+
+    summary = pd.DataFrame([{
+        "zones": len(centroids), "time_bins": N_TIME_BINS,
+        "dynamic_node_rows": len(node_metrics), "dynamic_od_rows": len(od_metrics),
+        "global_observed_od_pairs": len(global_od), "observed_od_time_cells": len(observed_export), "reposition_edges": len(reposition_edges),
+        "service_days": total_service_days,
+        "observed_od_cells": int((od_metrics["observed_trip_count"] > 0).sum()),
+        "imputed_od_cells": int((od_metrics["observed_trip_count"] <= 0).sum()),
+        "mean_od_confidence": float(od_metrics["confidence"].mean()),
+        "mean_node_confidence": float(node_metrics["node_confidence"].mean()),
+        "competition_scenario": competition_scenario,
+        "mean_wait_minutes": float(node_metrics["expected_wait_min"].mean()),
+        "median_wait_minutes": float(node_metrics["expected_wait_min"].median()),
+        "arbitrary_od_query_supported": True,
+    }])
+    summary.to_csv(PROCESSED_DIR / "environment_build_summary.csv", index=False)
+    print("\nEnvironment built successfully.")
+    for name in ["dynamic_node_metrics.csv", "dynamic_od_metrics.csv", "global_od_metrics.csv", "observed_od_metrics.pkl", "time_bin_profiles.csv", "reposition_edges.csv", "zone_centroids.csv", "dynamic_environment.pkl", "environment_build_summary.csv"]:
+        print(f"  {PROCESSED_DIR / name}")
+    return env
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build dynamic 15-minute taxi environment")
+    parser.add_argument("--no-clean", action="store_true", help="Do not remove previous dynamic outputs")
+    parser.add_argument("--competition-scenario", choices=sorted(COMPETITION_SCENARIO_MULTIPLIERS), default=DEFAULT_COMPETITION_SCENARIO)
+    args = parser.parse_args()
+    build_environment(clean_first=not args.no_clean, competition_scenario=args.competition_scenario)
+
 
 
 if __name__ == "__main__":
-    _clean_outputs_before_full_rebuild()
-    environment = build_environment()
-    quick_test(environment)
+    main()

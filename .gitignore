@@ -1,9 +1,17 @@
-venv/
+
+# Raw data
+data/*.parquet
+
+# Large generated environment files
+processed_data/dynamic_od_metrics.csv
+processed_data/*.pkl
+processed_data/*.pickle
+
+# Trained models
+models/*.pt
+models/*.pth
+models/*.pkl
+
+# Python cache
 __pycache__/
 *.pyc
-
-.DS_Store
-.ipynb_checkpoints/
-
-data/*.parquet
-processed_data/*.pkl

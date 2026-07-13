@@ -1,0 +1,4 @@
+status,hard_axiom,count
+INFO,False,1
+PASS,False,2
+PASS,True,5

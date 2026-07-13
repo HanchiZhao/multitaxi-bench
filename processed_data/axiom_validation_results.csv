@@ -1,0 +1,9 @@
+test,category,status,statistic,threshold,hard_axiom,details
+Efficiency,standard_shapley,PASS,0.0,abs(gap) <= numerical tolerance,True,sum(phi)=0.99941324; v(N)-v(empty)=0.99941324
+AIM,dynamic_monotonicity,PASS,0.0,>= -1e-07,True,violations=0/5120; adding a zone only enlarges the action set
+Dummy,standard_shapley,PASS,0.0,0 failures,True,"dummy_zones=[130, 161]; failures=[]"
+Symmetry,standard_shapley,PASS,0.0,0 failures,True,"symmetric_pairs=[(130, 161)]; failures=[]"
+FMD,dynamic_dominance_diagnostic,PASS,0.9878048780487806,>= 0.50 recommended,False,Spearman correlation between singleton strategic gain and Shapley value; complementarity can reduce correlation
+CG,imputation_robustness,PASS,-1.473015400265759e-05,value drop <=20% and top-5 Jaccard >=0.50,False,filtered_full=102.9850; original_full=102.9849; top5_jaccard=1.000
+DIM,income_monotonicity,PASS,0.2392948538041395,>= 0,True,zone=186; singleton change=0.210139; revenue +5.0%
+DME,diminishing_returns_diagnostic,INFO,0.28942510772748165,non-increasing increments (diagnostic only),False,"zone=186; values=[102.98494959144001, 103.22424444524415, 103.49698246596886, 103.78640757369634]; increments=[0.2392948538041395, 0.2727380207247023, 0.28942510772748165]; network complementarity may legitimately violate DME"

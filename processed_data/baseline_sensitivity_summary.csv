@@ -1,0 +1,7 @@
+baseline_a,baseline_b,spearman_rank_correlation,spearman_value_correlation,top5_jaccard_overlap
+wait_only,highest_demand_external,1.0,1.0,1.0
+wait_only,highest_income_external,1.0,1.0,1.0
+wait_only,greedy_external,1.0,1.0,1.0
+highest_demand_external,highest_income_external,1.0,1.0,1.0
+highest_demand_external,greedy_external,1.0,1.0,1.0
+highest_income_external,greedy_external,1.0,1.0,1.0
