@@ -1,0 +1,22 @@
+﻿MultiTaxi-Bench V5.1 COMPLETE MIGRATION
+
+这次已经包含 2025-01 至 2025-06 全部真实 Yellow Taxi 数据。
+
+推荐路径：C:\MultiTaxiBenchV51
+
+操作只有三步：
+
+1. 在项目文件夹地址栏输入 powershell 并回车。
+
+2. 运行：
+powershell -ExecutionPolicy Bypass -File .\START_MIGRATION.ps1
+
+3. 看到 MIGRATION READY 后运行安全测试：
+powershell -ExecutionPolicy Bypass -File .\run_smoke.ps1
+
+4. Smoke 通过后运行真实六个月正式任务：
+powershell -ExecutionPolicy Bypass -File .\run_paper.ps1
+
+重要：不要直接运行 generate_mock_data.py --force。新版 run_smoke.ps1 会把 mock 数据放在 _smoke_workspace，不会修改真实 data。
+
+详细说明请打开 FULL_MIGRATION_GUIDE_CN.md。

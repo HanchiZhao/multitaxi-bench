@@ -1,0 +1,50 @@
+﻿project_version: "5.1-preservation-first"
+
+experiment:
+  start_zone: 132
+  start_time: "08:00"
+  episodes: 50
+  competition_scenario: medium
+  global_shapley_players: 6
+  global_shapley_permutations: 96
+
+run:
+  deterministic_cpu: true
+  download_data: false
+  include_q_learning: true
+  q_episodes: 1000
+  include_dqn: true
+  dqn_episodes: 1500
+  include_legacy: false
+  fast: true
+  skip_environment: false
+  skip_validation: false
+  skip_competition_sensitivity: true
+
+cost_models:
+  primary: owner_operator
+
+  v4_legacy:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.35
+    empty_cost_per_mile: 0.35
+
+  owner_operator:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.70
+    empty_cost_per_mile: 0.70
+
+  fixed_lease:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fixed_lease_per_hour: 9.0
+
+  fare_share:
+    revenue_share: 0.65
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fare_share_rate: 0.35
+
+path_shapley:
+  permutations: 96

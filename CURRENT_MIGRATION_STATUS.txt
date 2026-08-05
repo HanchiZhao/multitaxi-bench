@@ -1,0 +1,10 @@
+MultiTaxi-Bench V5.1 Preservation-First
+Migration status: COMPLETE DATA READY
+Dataset: NYC Yellow Taxi 2025-01 through 2025-06
+Taxi zone lookup: present
+Taxi zone shapefile components: complete
+Raw data download during paper run: disabled
+Safe smoke isolation: enabled (_smoke_workspace)
+V4 preservation architecture: retained
+V5.1 cost and path-Shapley extensions: retained
+Next command: powershell -ExecutionPolicy Bypass -File .\START_MIGRATION.ps1

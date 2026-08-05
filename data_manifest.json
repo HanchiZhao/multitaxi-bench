@@ -1,0 +1,45 @@
+{
+  "dataset": "NYC TLC Yellow Taxi January-June 2025",
+  "files": [
+    {
+      "name": "yellow_tripdata_2025-01.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "yellow_tripdata_2025-02.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-02.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "yellow_tripdata_2025-03.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-03.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "yellow_tripdata_2025-04.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-04.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "yellow_tripdata_2025-05.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-05.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "yellow_tripdata_2025-06.parquet",
+      "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-06.parquet",
+      "kind": "trip"
+    },
+    {
+      "name": "taxi_zone_lookup.csv",
+      "url": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv",
+      "kind": "lookup"
+    },
+    {
+      "name": "taxi_zones.zip",
+      "url": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip",
+      "kind": "zones"
+    }
+  ]
+}

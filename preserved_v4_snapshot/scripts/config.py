@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import os
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -42,16 +41,9 @@ MIN_DURATION_MIN = 1.0
 MAX_DURATION_MIN = 240.0
 
 # Revenue / operating-cost assumptions. These are model parameters, not accounting claims.
-# V5.1 extension: environment-variable overrides. With no overrides, these remain
-# byte-for-behavior compatible with V4 defaults. The preservation wrapper sets them
-# before launching V4 subprocesses, so all V4 policies, Q-learning, DQN and DP use
-# the same configured objective.
-DRIVER_REVENUE_SHARE = float(os.getenv("MULTITAXI_DRIVER_REVENUE_SHARE", "1.00"))
-OCCUPIED_COST_PER_MILE = float(os.getenv("MULTITAXI_OCCUPIED_COST_PER_MILE", "0.35"))
-EMPTY_COST_PER_MILE = float(os.getenv("MULTITAXI_EMPTY_COST_PER_MILE", "0.35"))
-ACTIVE_COST_MODEL = os.getenv("MULTITAXI_COST_MODEL", "v4_legacy")
-FIXED_LEASE_PER_HOUR = float(os.getenv("MULTITAXI_FIXED_LEASE_PER_HOUR", "0.0"))
-FARE_SHARE_RATE = float(os.getenv("MULTITAXI_FARE_SHARE_RATE", "0.0"))
+DRIVER_REVENUE_SHARE = 1.00
+OCCUPIED_COST_PER_MILE = 0.35
+EMPTY_COST_PER_MILE = 0.35
 
 # Passenger-demand / latent vacant-taxi competition model.
 REFERENCE_WAIT_MINUTES = 12.0

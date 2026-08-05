@@ -1,17 +1,52 @@
-
-# Raw data
-data/*.parquet
-
-# Large generated environment files
-processed_data/dynamic_od_metrics.csv
+.venv/
+__pycache__/
+*.py[cod]
+data/yellow_tripdata_*.parquet
+data/taxi_zones.zip
+data/*.shp
+data/*.shx
+data/*.dbf
+data/*.prj
+data/*.cpg
 processed_data/*.pkl
-processed_data/*.pickle
-
-# Trained models
+processed_data/dynamic_od_metrics.csv
 models/*.pt
 models/*.pth
 models/*.pkl
+*.log
+.DS_Store
+Thumbs.db
 
-# Python cache
+# ==========================================
+# V5.1 local / generated artifacts
+# ==========================================
+
+# Raw TLC data
+data/*.parquet
+
+# Python environment
+.venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+
+# Generated environments and caches
+processed_data/
+_smoke_workspace/
+
+# Trained models
+models/
+*.pt
+*.pth
+*.pkl
+*.pickle
+
+# Local backup outputs
+processed_data_V4_backup_*/
+results_V4_backup_*/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+

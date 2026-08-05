@@ -1,0 +1,21 @@
+name: smoke
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - run: python scripts/verify_v4_preservation.py
+      - run: python scripts/generate_mock_data.py --trips-per-month 300 --force
+      - run: python scripts/run_v51.py --config configs/smoke.yaml --skip-download
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-results
+          path: |
+            processed_data/*.csv
+            processed_data/reproduction_report.json
+            results/figures/*.png

@@ -1,0 +1,140 @@
+{
+  "status": "COMPLETE_MIGRATION_DATA_READY",
+  "trip_months": "2025-01 through 2025-06",
+  "trip_files": [
+    {
+      "month": "2025-01",
+      "file": "yellow_tripdata_2025-01.parquet",
+      "size_bytes": 59158238,
+      "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    },
+    {
+      "month": "2025-02",
+      "file": "yellow_tripdata_2025-02.parquet",
+      "size_bytes": 60343086,
+      "sha256": "037cba555a73663f3a51a2c27816e40e3feb364769942bdf122b9da31e377bd3",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    },
+    {
+      "month": "2025-03",
+      "file": "yellow_tripdata_2025-03.parquet",
+      "size_bytes": 69964745,
+      "sha256": "20c4b77cce457b7cfdae77c5069ca7dc91c167f876a41467f4502ab69487a186",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    },
+    {
+      "month": "2025-04",
+      "file": "yellow_tripdata_2025-04.parquet",
+      "size_bytes": 67352824,
+      "sha256": "6f98938de9380a3f85600533816f0dc0e6d9b5b210e485d623952bac599bbe28",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    },
+    {
+      "month": "2025-05",
+      "file": "yellow_tripdata_2025-05.parquet",
+      "size_bytes": 77837865,
+      "sha256": "7ef46bcd0fceee7f8c0bb38a532be05bceefabb512d4bb0b32a7727dd862b15c",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    },
+    {
+      "month": "2025-06",
+      "file": "yellow_tripdata_2025-06.parquet",
+      "size_bytes": 73542954,
+      "sha256": "1bea7f5b09c744414451fa7fef09fbc5a393ffb1621c859be6ba0df23a14e1b6",
+      "parquet_magic_head": "PAR1",
+      "parquet_magic_tail": "PAR1",
+      "expected_schema_tokens_in_footer": {
+        "tpep_pickup_datetime": true,
+        "tpep_dropoff_datetime": true,
+        "PULocationID": true,
+        "DOLocationID": true,
+        "trip_distance": true,
+        "fare_amount": true,
+        "tip_amount": true,
+        "cbd_congestion_fee": true
+      }
+    }
+  ],
+  "all_six_parquet_magic_valid": true,
+  "all_expected_schema_tokens_present": true,
+  "taxi_zone_lookup": {
+    "rows": 265,
+    "unique_location_ids": 265,
+    "special_location_ids": [
+      {
+        "LocationID": 264,
+        "Borough": "Unknown",
+        "Zone": "",
+        "service_zone": ""
+      },
+      {
+        "LocationID": 265,
+        "Borough": "",
+        "Zone": "Outside of NYC",
+        "service_zone": ""
+      }
+    ]
+  },
+  "taxi_zone_shapefile": {
+    "features": 263,
+    "valid_geometries": 263,
+    "crs": "EPSG:2263"
+  },
+  "note": "Runtime START_MIGRATION.ps1 performs full pyarrow schema validation and SHA256 lock verification after installing the pinned environment."
+}

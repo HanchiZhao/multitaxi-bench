@@ -1,0 +1,64 @@
+{
+  "status": "COMPLETE_DATA_OK",
+  "present_trip_files": [
+    "yellow_tripdata_2025-01.parquet",
+    "yellow_tripdata_2025-02.parquet",
+    "yellow_tripdata_2025-03.parquet",
+    "yellow_tripdata_2025-04.parquet",
+    "yellow_tripdata_2025-05.parquet",
+    "yellow_tripdata_2025-06.parquet"
+  ],
+  "missing_trip_files": [],
+  "lookup_rows": 265,
+  "lookup_unique_location_ids": 265,
+  "files": {
+    "taxi_zone_lookup.csv": {
+      "size_bytes": 10467,
+      "sha256": "de1aa26cf88649a7559b5b9d6069b2004a40bbe68f600a367c15c0615a6c0147"
+    },
+    "taxi_zones.cpg": {
+      "size_bytes": 5,
+      "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824"
+    },
+    "taxi_zones.dbf": {
+      "size_bytes": 59927,
+      "sha256": "d57560e494d92ce01cbf4a7f36ab977cecdee11769b9ad2c4499b929def8bb08"
+    },
+    "taxi_zones.prj": {
+      "size_bytes": 565,
+      "sha256": "d1c8390206ce5d557a5908a3a0ce7dd915fbcd12cf73a779b78280bf61cb330c"
+    },
+    "taxi_zones.shp": {
+      "size_bytes": 1586264,
+      "sha256": "70a5ec90bf0b6a4609b0846638e5331fee861830633cf29c4f6ed846d5d4c2ea"
+    },
+    "taxi_zones.shx": {
+      "size_bytes": 2204,
+      "sha256": "830c7309d34c9a617757a3c821f9fc3868c9442a239ea855cd4e49f3b566597c"
+    },
+    "yellow_tripdata_2025-01.parquet": {
+      "size_bytes": 59158238,
+      "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a"
+    },
+    "yellow_tripdata_2025-02.parquet": {
+      "size_bytes": 60343086,
+      "sha256": "037cba555a73663f3a51a2c27816e40e3feb364769942bdf122b9da31e377bd3"
+    },
+    "yellow_tripdata_2025-03.parquet": {
+      "size_bytes": 69964745,
+      "sha256": "20c4b77cce457b7cfdae77c5069ca7dc91c167f876a41467f4502ab69487a186"
+    },
+    "yellow_tripdata_2025-04.parquet": {
+      "size_bytes": 67352824,
+      "sha256": "6f98938de9380a3f85600533816f0dc0e6d9b5b210e485d623952bac599bbe28"
+    },
+    "yellow_tripdata_2025-05.parquet": {
+      "size_bytes": 77837865,
+      "sha256": "7ef46bcd0fceee7f8c0bb38a532be05bceefabb512d4bb0b32a7727dd862b15c"
+    },
+    "yellow_tripdata_2025-06.parquet": {
+      "size_bytes": 73542954,
+      "sha256": "1bea7f5b09c744414451fa7fef09fbc5a393ffb1621c859be6ba0df23a14e1b6"
+    }
+  }
+}
