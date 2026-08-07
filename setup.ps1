@@ -25,7 +25,7 @@ function New-ProjectVenv {
     throw @"
 Python 3.11 x64 was not found.
 Install Python 3.11 for Windows, make sure the Python launcher or python.exe is available,
-then rerun START_MIGRATION.ps1.
+then rerun .\setup.ps1.
 "@
 }
 
@@ -42,7 +42,7 @@ if ($LASTEXITCODE -ne 0) { throw "Core dependency installation failed." }
 & $Python -m pip install -r requirements-dqn.txt
 if ($LASTEXITCODE -ne 0) { throw "PyTorch CPU installation failed." }
 
-Write-Host "Checking V4 preservation..." -ForegroundColor Yellow
+Write-Host "Checking the audited V4 core manifest..." -ForegroundColor Yellow
 & $Python scripts\verify_v4_preservation.py
 if ($LASTEXITCODE -ne 0) { throw "V4 preservation check failed." }
 

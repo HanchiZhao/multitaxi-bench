@@ -1,0 +1,24 @@
+{
+  "status": "RESEARCH CONTRACT PASSED",
+  "checks": {
+    "horizon_is_120": true,
+    "decision_step_is_5": true,
+    "wait_revaluation_is_5": true,
+    "wait_action_exists": true,
+    "positive_revenue_share": true,
+    "nonnegative_mileage_costs": true,
+    "passenger_destination_exogenous": true,
+    "completed_trip_revenue_only": true,
+    "strict_time_accounting_present": true,
+    "driver_starts_at_requested_zone": true,
+    "episode_horizon_is_120": true,
+    "time_accounting_runtime": true,
+    "actions_are_wait_or_reposition": true
+  },
+  "failed": [],
+  "active_objective": {
+    "driver_revenue_share": 0.6979,
+    "occupied_cost_per_mile": 0.25,
+    "empty_cost_per_mile": 0.25
+  }
+}

@@ -1,2 +1,0 @@
-start_zone,start_zone_name,start_time,horizon_minutes,method,candidate_zone_count,coalitions_evaluated,num_permutations,baseline_value_wait_only,full_coalition_value,repositioning_value_gain,sum_shapley,efficiency_gap,value_unit,competition_scenario,base_allowed_zone_ids
-132,JFK Airport,08:00,120,exact,10,1024,3628800,101.98553634765801,102.98494959144001,0.9994132437820014,0.9994132437820017,3.3306690738754696e-16,USD_per_2h,medium,

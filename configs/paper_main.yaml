@@ -1,4 +1,5 @@
-project_version: "5.1-preservation-first"
+project_version: "5.1.0"
+
 experiment:
   start_zone: 132
   start_time: "08:00"
@@ -8,7 +9,9 @@ experiment:
   global_shapley_permutations: 512
 run:
   deterministic_cpu: true
-  download_data: true
+  # Paper runs never download or overwrite data implicitly. Use
+  # scripts/download_data.py explicitly, then verify the frozen lock.
+  download_data: false
   include_q_learning: true
   q_episodes: 15000
   include_dqn: true
@@ -17,11 +20,43 @@ run:
   fast: false
   skip_environment: false
   skip_competition_sensitivity: false
+  fare_share_calibration_check: true
+
 cost_models:
-  primary: owner_operator
-  v4_legacy: {revenue_share: 1.0, occupied_cost_per_mile: 0.35, empty_cost_per_mile: 0.35}
-  owner_operator: {revenue_share: 1.0, occupied_cost_per_mile: 0.70, empty_cost_per_mile: 0.70}
-  fixed_lease: {revenue_share: 1.0, occupied_cost_per_mile: 0.25, empty_cost_per_mile: 0.25, fixed_lease_per_hour: 9.0}
-  fare_share: {revenue_share: 0.65, occupied_cost_per_mile: 0.25, empty_cost_per_mile: 0.25, fare_share_rate: 0.35}
+  # Primary definition: a TLC-style fare-share lease at the regulated 35% farebox cap.
+  # V4 stores fare + tip as one receipt field, while TLC fare-share excludes tips.
+  # Across the locked 2025-01--06 cleaned trips, retaining all tips converts the
+  # 35% farebox withholding into an effective 30.21% share of modeled receipts.
+  # Therefore the driver retains 69.79% of modeled fare+tip receipts. The retained
+  # share is applied once; fare_share_rate is disclosure-only and is never deducted
+  # a second time. The $0.25/mile term represents driver-borne variable movement cost
+  # under a fleet-provided vehicle, not full owner-operator vehicle ownership cost.
+  primary: fare_share
+
+  v4_legacy:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.35
+    empty_cost_per_mile: 0.35
+
+  owner_operator:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.70
+    empty_cost_per_mile: 0.70
+
+  fixed_lease:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fixed_lease_per_hour: 9.0
+
+  fare_share:
+    revenue_share: 0.6979
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fixed_lease_per_hour: 0.0
+    fare_share_rate: 0.3021
+    source_farebox_share_rate: 0.35
+    tips_retained_fully: true
+
 path_shapley:
   permutations: 512

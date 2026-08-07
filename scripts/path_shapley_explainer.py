@@ -132,7 +132,12 @@ def main():
         if not episode_cost.empty:
             match=episode_cost[(episode_cost.algorithm==rep.algorithm)&(episode_cost.scenario_id==int(rep.scenario_id))]
             if not match.empty:
-                expected=float(match.iloc[0].primary_take_home_2h); calibration_rows.append({'algorithm':rep.algorithm,'scenario_id':int(rep.scenario_id),'path_id':path_id,'replayed_full_value':full,'episode_primary_take_home':expected,'calibration_gap':full-expected,'passed':abs(full-expected)<=1e-6})
+                value_column = (
+                    "primary_operating_net_earnings_2h"
+                    if "primary_operating_net_earnings_2h" in match.columns
+                    else "primary_take_home_2h"
+                )
+                expected=float(match.iloc[0][value_column]); calibration_rows.append({'algorithm':rep.algorithm,'scenario_id':int(rep.scenario_id),'path_id':path_id,'replayed_full_value':full,'episode_primary_operating_net_earnings':expected,'calibration_gap':full-expected,'passed':abs(full-expected)<=1e-6})
     sv=pd.DataFrame(out_rows); cv=pd.DataFrame(coalition_rows); ef=pd.DataFrame(eff_rows); ps=pd.DataFrame(path_rows)
     sv.to_csv(PROCESSED_DIR/'path_shapley_values.csv',index=False); cv.to_csv(PROCESSED_DIR/'path_coalition_values.csv',index=False); ef.to_csv(PROCESSED_DIR/'path_shapley_efficiency_checks.csv',index=False); ps.to_csv(PROCESSED_DIR/'path_shapley_summary.csv',index=False); pd.DataFrame(calibration_rows).to_csv(PROCESSED_DIR/'path_value_calibration.csv',index=False)
     # same-zone, cross-context table; no aggregation that overwrites occurrence identity

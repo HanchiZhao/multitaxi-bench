@@ -1,3 +1,0 @@
-MultiTaxi-Bench Dynamic Two-Hour Final V4
-Environment schema: 4.0-final
-Includes: full minute accounting, paired comparisons, duration-tail calibration, Dynamic Zone Shapley diagnostics, Q-learning diagnostics, and dynamic-action Double DQN.

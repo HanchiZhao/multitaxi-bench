@@ -1,52 +1,33 @@
 .venv/
-__pycache__/
-*.py[cod]
-data/yellow_tripdata_*.parquet
-data/taxi_zones.zip
-data/*.shp
-data/*.shx
-data/*.dbf
-data/*.prj
-data/*.cpg
-processed_data/*.pkl
-processed_data/dynamic_od_metrics.csv
-models/*.pt
-models/*.pth
-models/*.pkl
-*.log
-.DS_Store
-Thumbs.db
-
-# ==========================================
-# V5.1 local / generated artifacts
-# ==========================================
-
-# Raw TLC data
-data/*.parquet
-
-# Python environment
-.venv/
 venv/
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+.pytest_cache/
 
-# Generated environments and caches
+# Official TLC trip files are downloaded locally and verified against data_lock.json.
+data/yellow_tripdata_*.parquet
+data/taxi_zones.zip
+data/*.part
+data/checksums.lock.json
+
+# Runtime outputs are reproducible and are not committed. Curated final evidence lives
+# under paper_artifacts/.
 processed_data/
-_smoke_workspace/
-
-# Trained models
+results/
 models/
+logs/
+_smoke_workspace/
+backups/
+
+# Model/environment caches and local delivery bundles.
 *.pt
 *.pth
 *.pkl
 *.pickle
+deliverables/
 
-# Local backup outputs
-processed_data_V4_backup_*/
-results_V4_backup_*/
-
-# OS/editor
+# OS/editor files.
 .DS_Store
 Thumbs.db
+*.log
 

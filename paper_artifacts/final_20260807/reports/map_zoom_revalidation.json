@@ -1,0 +1,73 @@
+﻿{
+    "status":  "MAP ZOOM REDRAW PASSED",
+    "timestamp":  "20260807_112852",
+    "project_root":  "C:\\Users\\zhaohanchi\\Desktop\\multitaxi-bench-v5.1",
+    "visualization_only":  true,
+    "experiment_recomputed":  false,
+    "path_or_shapley_values_changed":  false,
+    "previous_script_sha256":  "dedc236bca558842b7f72a27a399dc7ca5f563e83acb92da7a3efa84447a6ff2",
+    "installed_script_sha256":  "4969c6105aad0988a582cbd5a0cdfe5db3324dfb57c86af59a02cdf364b6916f",
+    "map_sha256_before":  "a75c1f7bd6656da3bf552eb2fe7c4422a36efc48850e48bced1b80ce3b05f8bf",
+    "map_sha256_after":  "52c0e941b428621f663caa74c83dd0ad4147b5df70093c607a1571c3b5e0eb6d",
+    "map_changed_in_this_run":  true,
+    "immutable_results_hash_check":  "PASSED",
+    "immutable_files":  [
+                            {
+                                "path":  "processed_data\\path_shapley_values.csv",
+                                "sha256":  "fb8d2a682bf6cefaef1f04cfc9716d44720d98335f3be422e32324e5c0b21e74"
+                            },
+                            {
+                                "path":  "processed_data\\path_shapley_efficiency_checks.csv",
+                                "sha256":  "f5b01dd0acdd9f083abbe8fe58a5eb664f00a9c5bfd275fc55507903adb4d0c0"
+                            },
+                            {
+                                "path":  "processed_data\\path_axiom_validation_results.csv",
+                                "sha256":  "bb6232093c704be26ca2b4514fd531a4335af97e938e33f7eb6b917e28a734f8"
+                            },
+                            {
+                                "path":  "processed_data\\axiom_validation_results.csv",
+                                "sha256":  "9c6b3241f9af5e9fd7186e911563727a2a5a37582b8628a7451fbf5627a4bfb8"
+                            },
+                            {
+                                "path":  "processed_data\\algorithm_cost_model_comparison.csv",
+                                "sha256":  "caf82f6aa80bc6c7283b4b1700f349de8ded5980a97ccfa152cfb0bb4193648d"
+                            },
+                            {
+                                "path":  "processed_data\\policy_episode_results.csv",
+                                "sha256":  "019a11b3839e70e74eab6ae2842349654e2c2d27fd512fddf0b97f4768f004a3"
+                            },
+                            {
+                                "path":  "processed_data\\cost_accounting_audit.json",
+                                "sha256":  "a2b3374301f889dc1e57db28058c652f347af1f0c3d3b46a034527ed244956f6"
+                            },
+                            {
+                                "path":  "processed_data\\research_contract_report.json",
+                                "sha256":  "dda7f69bac8b8da6097c0d26c37a6d4363d2fb301ac5e8658ba4d9e37bc3eee8"
+                            },
+                            {
+                                "path":  "processed_data\\reproduction_report.json",
+                                "sha256":  "a6916b914fd0cee0ea1088cc8f0ead8099159ce52d7035cdba31e57a3ab26716"
+                            },
+                            {
+                                "path":  "results\\fare_share_calibration.json",
+                                "sha256":  "b49bfd35cff8955ecd6bac8909d311353477e4e9fb1cad60b9d56c7c3f87454b"
+                            },
+                            {
+                                "path":  "results\\figures\\algorithm_path_shapley_bars.png",
+                                "sha256":  "2a63e542ba68f111509d8e8d0c0c2286aa4a7541753efa615666c63e9ab9c76e"
+                            }
+                        ],
+    "acceptance_status":  "FINAL EXPERIMENT ACCEPTANCE PASSED",
+    "figure_dimensions":  {
+                              "bars":  [
+                                           4011,
+                                           5205
+                                       ],
+                              "map":  [
+                                          3899,
+                                          6047
+                                      ]
+                          },
+    "backup_root":  "C:\\Users\\zhaohanchi\\Desktop\\multitaxi-bench-v5.1\\backups\\map_zoom_20260807_112852",
+    "run_log":  "C:\\Users\\zhaohanchi\\Desktop\\multitaxi-bench-v5.1\\logs\\map_zoom_redraw_20260806_20260807_112852.log"
+}

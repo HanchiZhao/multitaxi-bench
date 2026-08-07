@@ -1,2 +1,0 @@
-# Required for scripts/train_dqn.py and --include-dqn.
-torch>=2.1
