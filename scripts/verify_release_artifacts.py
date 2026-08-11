@@ -12,6 +12,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = ROOT / "paper_artifacts" / "final_20260811"
 MANIFEST = ARTIFACT_ROOT / "SHA256SUMS.csv"
+TEXT_SUFFIXES = {".csv", ".json", ".md", ".txt", ".yaml", ".yml"}
 EXPECTED_ALGORITHMS = {
     "wait_only",
     "highest_demand",
@@ -23,12 +24,25 @@ EXPECTED_ALGORITHMS = {
 }
 
 
+def canonical_bytes(path: Path) -> bytes:
+    """Return cross-platform bytes for release hashing.
+
+    Git may check text artifacts out with LF or CRLF line endings.  The release
+    manifest therefore hashes text after normalizing line endings to LF, while
+    binary figures remain byte-exact.
+    """
+    data = path.read_bytes()
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return data
+
+
+def canonical_size(path: Path) -> int:
+    return len(canonical_bytes(path))
+
+
 def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return hashlib.sha256(canonical_bytes(path)).hexdigest()
 
 
 def main() -> None:
@@ -55,7 +69,7 @@ def main() -> None:
         if not path.is_file():
             continue
         expected_size = int(row["size_bytes"])
-        if path.stat().st_size != expected_size:
+        if canonical_size(path) != expected_size:
             failures.append(f"size mismatch: {relative}")
         if sha256(path) != str(row["sha256"]):
             failures.append(f"SHA256 mismatch: {relative}")
