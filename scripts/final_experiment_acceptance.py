@@ -1,4 +1,4 @@
-"""Machine-check the formal 300-scenario V5.1 experiment deliverables."""
+"""Machine-check the formal 300-scenario v5.2 experiment deliverables."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +13,15 @@ from cost_models import load_yaml, primary_cost_model
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_ALGORITHMS = {
+    "wait_only",
+    "highest_demand",
+    "highest_income",
+    "greedy_net_earnings",
+    "finite_horizon_value_iteration",
+    "q_learning",
+    "dqn",
+}
 
 
 def read_json(path: Path) -> dict:
@@ -56,16 +65,61 @@ def main() -> None:
 
     config = load_yaml(args.config)
     primary = primary_cost_model(config)
+    experiment = config.get("experiment", {})
+    run = config.get("run", {})
     checks: dict[str, bool] = {}
     details: dict[str, object] = {}
 
     checks["primary_is_fare_share"] = primary.name == "fare_share"
+    checks["project_version_is_5_2_0"] = str(config.get("project_version")) == "5.2.0"
+    checks["frozen_formal_config"] = bool(
+        int(experiment.get("start_zone", -1)) == 132
+        and str(experiment.get("start_time")) == "08:00"
+        and int(experiment.get("episodes", -1)) == 300
+        and int(run.get("q_episodes", -1)) == 15000
+        and int(run.get("dqn_episodes", -1)) == 12000
+        and run.get("include_q_learning") is True
+        and run.get("include_dqn") is True
+        and run.get("fast", False) is False
+        and run.get("skip_environment", False) is False
+        and run.get("skip_competition_sensitivity", False) is False
+    )
+    checks["frozen_primary_cost_coefficients"] = bool(
+        abs(float(primary.revenue_share) - 0.6979) <= 1e-12
+        and abs(float(primary.occupied_cost_per_mile) - 0.25) <= 1e-12
+        and abs(float(primary.empty_cost_per_mile) - 0.25) <= 1e-12
+        and abs(float(primary.fixed_lease_per_hour)) <= 1e-12
+    )
+    details["frozen_formal_config"] = {
+        "start_zone": experiment.get("start_zone"),
+        "start_time": experiment.get("start_time"),
+        "evaluation_episodes_per_policy": experiment.get("episodes"),
+        "q_learning_training_episodes": run.get("q_episodes"),
+        "double_dqn_training_episodes": run.get("dqn_episodes"),
+    }
     reproduction = read_json(PROCESSED_DIR / "reproduction_report.json")
     checks["reproduction_passed"] = reproduction.get("status") == "REPRODUCTION PASSED"
     research = read_json(PROCESSED_DIR / "research_contract_report.json")
     checks["research_contract_passed"] = research.get("status") == "RESEARCH CONTRACT PASSED"
     v4 = read_json(PROCESSED_DIR / "v4_preservation_report.json")
-    checks["v4_preservation_passed"] = v4.get("status") == "V4 PRESERVATION PASSED"
+    checks["v4_core_authorized_fix_passed"] = (
+        v4.get("status") == "V4 CORE WITH AUTHORIZED V5.2 DATE FIX PASSED"
+    )
+    date_fix = read_json(PROCESSED_DIR / "date_boundary_fix_validation.json")
+    checks["date_boundary_fix_passed"] = (
+        date_fix.get("status") == "V5.2 DATE BOUNDARY VALIDATION PASSED"
+    )
+    environment_summary = pd.read_csv(
+        PROCESSED_DIR / "environment_build_summary.csv"
+    ).iloc[0]
+    checks["correct_181_day_exposure"] = (
+        int(environment_summary.get("service_days", -1)) == 181
+        and int(environment_summary.get("retained_out_of_month_rows", -1)) == 0
+    )
+    checks["date_fixed_environment_schema"] = (
+        str(environment_summary.get("environment_schema_version"))
+        == "4.1-date-boundary-fix"
+    )
     cost_audit = read_json(PROCESSED_DIR / "cost_accounting_audit.json")
     checks["cost_accounting_passed"] = cost_audit.get("status") == "COST ACCOUNTING PASSED"
     calibration = read_json(RESULTS_DIR / "fare_share_calibration.json")
@@ -73,11 +127,28 @@ def main() -> None:
 
     episodes = pd.read_csv(PROCESSED_DIR / "policy_episode_results.csv")
     counts = episodes.groupby("algorithm")["scenario_id"].size()
-    checks["all_algorithms_have_300_scenarios"] = bool((counts == 300).all())
+    algorithms = set(episodes["algorithm"].astype(str).unique())
+    scenario_sets = {
+        str(algorithm): set(group["scenario_id"].tolist())
+        for algorithm, group in episodes.groupby("algorithm", sort=False)
+    }
+    common_scenario_bank = bool(scenario_sets) and all(
+        values == next(iter(scenario_sets.values()))
+        for values in scenario_sets.values()
+    )
+    checks["exact_seven_policy_set"] = algorithms == EXPECTED_ALGORITHMS
+    checks["all_algorithms_have_300_common_scenarios"] = bool(
+        len(episodes) == 2100
+        and (counts == 300).all()
+        and all(len(values) == 300 for values in scenario_sets.values())
+        and common_scenario_bank
+    )
     checks["strict_120_minute_accounting"] = bool(
         episodes["time_accounting_error"].abs().max() <= 1e-6
         and (episodes["horizon_minutes"] == 120).all()
     )
+    details["algorithms"] = sorted(algorithms)
+    details["evaluation_episode_total"] = int(len(episodes))
     details["scenario_counts"] = {str(key): int(value) for key, value in counts.items()}
     details["max_abs_time_accounting_error"] = float(
         episodes["time_accounting_error"].abs().max()
@@ -210,6 +281,8 @@ def main() -> None:
         else "FINAL EXPERIMENT ACCEPTANCE FAILED",
         "checks": checks,
         "failed": failed,
+        "project_version": "5.2.0",
+        "supersedes": "v5.1 formal results affected by the 194-versus-181 service-day exposure defect",
         "details": details,
     }
     output = RESULTS_DIR / "final_experiment_acceptance.json"

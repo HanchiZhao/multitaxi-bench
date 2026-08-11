@@ -1,39 +1,77 @@
-# Final verified experiment — 2026-08-07
+# Final verified experiment — 2026-08-11
 
-The formal fare-share-primary run used 300 common scenarios per algorithm and passed all
-machine acceptance checks.
+MultiTaxi-Bench v5.2 is the accepted, date-boundary-corrected paper run. The machine
+acceptance status is `FINAL EXPERIMENT ACCEPTANCE PASSED` with no failed check.
 
-| Rank | Algorithm | Mean operating net earnings (USD/2h) | 95% CI |
-|---:|---|---:|---:|
-| 1 | DQN | 72.5035 | [70.4970, 74.5099] |
-| 2 | Finite-Horizon Value Iteration | 72.3656 | [70.3355, 74.3958] |
-| 3 | Wait Only | 71.5437 | [69.4525, 73.6349] |
-| 4 | Greedy Net Earnings | 64.8055 | [62.7607, 66.8503] |
-| 5 | Q-Learning | 64.5307 | [62.5267, 66.5348] |
-| 6 | Highest Demand | 58.6555 | [56.9249, 60.3860] |
-| 7 | Highest Income | 55.4260 | [53.3225, 57.5294] |
+## Frozen evaluation contract
 
-Paired against Wait Only:
+- start state: one empty driver at JFK Airport, Taxi Zone 132;
+- start time: 08:00;
+- horizon: 120 minutes with 5-minute WAIT re-evaluation;
+- primary metric: completed-trip operating net earnings under the fare-share model;
+- evaluation: seven policies on an identical bank of 300 scenarios each;
+- training: Q-learning 15,000 episodes; Double DQN 12,000 episodes;
+- Global Shapley: ten reposition candidates, exact 1,024-coalition evaluation;
+- Path Shapley: one representative path per policy with unique occurrence identities.
 
-- DQN: +0.9598 USD/2h, 95% CI [-0.4329, 2.3525].
-- Finite-Horizon Value Iteration: +0.8219 USD/2h,
-  95% CI [-0.5418, 2.1857].
+## Primary policy results
 
-Both intervals cross zero. The evidence supports slightly higher sample means, not a claim
-that either method is statistically superior to Wait Only.
+| Rank | Policy | Mean (USD/2h) | Mean paired gain vs WAIT-only | Paired 95% CI |
+|---:|---|---:|---:|---:|
+| 1 | Finite-horizon value iteration | 72.3245 | +0.9803 | [-0.3935, 2.3541] |
+| 2 | WAIT-only | 71.3443 | reference | reference |
+| 3 | DQN | 71.0296 | -0.3147 | [-1.8500, 1.2206] |
+| 4 | Q-learning | 64.9298 | -6.4144 | [-8.2801, -4.5488] |
+| 5 | Greedy net earnings | 64.3991 | -6.9452 | [-8.8134, -5.0770] |
+| 6 | Highest demand | 58.7053 | -12.6389 | [-14.7057, -10.5722] |
+| 7 | Highest income | 55.3020 | -16.0423 | [-18.2375, -13.8470] |
 
-## Validation evidence
+The value-iteration and DQN intervals cross zero. Their observed means therefore do not
+demonstrate superiority over WAIT-only at the 95% level. Q-learning, Greedy net earnings,
+Highest demand, and Highest income have intervals entirely below zero.
 
-- 7 algorithms × 300 scenarios = 2,100 episodes;
-- maximum time-accounting error: 2.84e-14;
-- maximum primary re-accounting gap: 4.26e-14;
-- fare-share deduction count: exactly 1;
-- maximum Path Efficiency gap: 4.26e-13;
-- 41 negative Path Shapley occurrences retained;
-- Q-learning fallback/unseen rate: 0.2661%;
+The operational mechanism is consistent with the fixed airport task: mean empty time is
+11.06 minutes for value iteration, compared with 25.14 for Q-learning, 25.91 for Greedy,
+38.77 for Highest demand, and 41.54 for Highest income. WAIT-only has no empty reposition
+time and completes the most passenger trips on average (3.07).
+
+## Data-boundary repair
+
+The v5.1 run used 194 rather than 181 service days because 134 quality-clean pickups fell
+outside the month declared by their source files. Version 5.2 applies
+`month_start <= pickup < next_month_start`, does not constrain dropoff timestamps, and
+uses the same boundary for environment construction and fare-share calibration.
+
+| Boundary check | Final value |
+|---|---:|
+| Retained cleaned trips | 21,753,862 |
+| Service days | 181 |
+| Clean out-of-month pickups excluded | 134 |
+| Out-of-month pickups retained | 0 |
+| Dynamic environment schema | `4.1-date-boundary-fix` |
+
+## Shapley results
+
+The Global Dynamic Zone game assigns 0.71130 USD/2h of total reposition-option value.
+Penn Station/Madison Sq West (Zone 186) is first with 0.41484 USD/2h. Removing the five
+highest-Shapley zones reduces the full reposition-option value by 86.2%.
+
+The algorithm-conditioned Path-occurrence analysis contains 64 unique occurrences across
+seven representative trajectories. Forty occurrences have negative signed values; these
+are retained rather than clipped. Global Efficiency error is 3.33e-16, all seven Path
+Efficiency checks pass, and no hard Global or Path axiom fails.
+
+## Acceptance evidence
+
+- 2,100 evaluation rows and exactly 300 scenarios for every policy;
+- identical scenario identifiers across all seven policies;
+- maximum time-accounting error: 4.26e-14 minutes;
+- Q-learning table-action rate: 99.8865%;
 - DQN trained-model action rate: 100%;
-- no Global or Path hard-axiom failure.
+- configured retained-receipts share: 0.6979;
+- independently derived retained-receipts share: 0.6979058177;
+- final failed-check list: empty.
 
-See `paper_artifacts/` for the immutable reports, selected tables, high-resolution bars,
-and local-detail Taxi Zone maps from the accepted run.
-
+The canonical evidence is stored in `paper_artifacts/final_20260811/` and protected by
+`SHA256SUMS.csv`. The v5.1 evidence remains available through Git history and the preserved
+v5.1 branch, but it is not the final paper result.

@@ -10,5 +10,5 @@ cp -R "$ROOT/configs" "$SMOKE/configs"
 cp -R "$ROOT/provenance" "$SMOKE/provenance"
 cd "$SMOKE"
 "$PY" scripts/generate_mock_data.py --trips-per-month 1200 --force
-"$PY" scripts/run_v51.py --config configs/smoke.yaml --skip-download
+"$PY" scripts/run_v52.py --config configs/smoke.yaml --skip-download
 echo "SAFE SMOKE TEST PASSED; real data were never touched."

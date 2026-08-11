@@ -1,0 +1,33 @@
+{
+  "status": "V5.2 DATE BOUNDARY VALIDATION PASSED",
+  "project_version": "5.2.0",
+  "checks": {
+    "strict_data_lock_passed": true,
+    "date_gate_passed": true,
+    "expected_service_days_is_181": true,
+    "gate_service_days_is_181": true,
+    "environment_service_days_is_181": true,
+    "all_134_locked_outliers_excluded": true,
+    "no_out_of_month_rows_retained": true,
+    "fare_share_uses_same_boundary": true,
+    "environment_schema_is_date_fixed": true,
+    "pickup_only_boundary_documented": true
+  },
+  "failed": [],
+  "details": {
+    "months": [
+      "2025-01",
+      "2025-02",
+      "2025-03",
+      "2025-04",
+      "2025-05",
+      "2025-06"
+    ],
+    "expected_service_days": 181,
+    "environment_service_days": 181,
+    "excluded_out_of_month_clean_rows": 134,
+    "configured_driver_revenue_share": 0.6979,
+    "derived_driver_revenue_share": 0.6979058177218093,
+    "environment_schema_version": "4.1-date-boundary-fix"
+  }
+}

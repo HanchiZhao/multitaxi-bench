@@ -28,6 +28,7 @@ from config import (
     ZONE_SHP,
 )
 from cost_models import load_yaml, primary_cost_model
+from month_boundaries import month_bounds, pickup_in_declared_month
 
 
 REQUIRED_COLUMNS = [
@@ -41,7 +42,9 @@ REQUIRED_COLUMNS = [
 ]
 
 
-def month_totals(path: Path, valid_zones: set[int]) -> dict[str, float]:
+def month_totals(
+    path: Path, valid_zones: set[int], month: str
+) -> dict[str, float]:
     parquet = pq.ParquetFile(path)
     available = set(parquet.schema.names)
     missing = sorted(set(REQUIRED_COLUMNS[:-1]) - available)
@@ -49,6 +52,9 @@ def month_totals(path: Path, valid_zones: set[int]) -> dict[str, float]:
         raise SystemExit(f"{path.name} is missing columns: {missing}")
     columns = [column for column in REQUIRED_COLUMNS if column in available]
     clean_rows = 0
+    clean_rows_before_month_filter = 0
+    out_of_month_clean_rows_excluded = 0
+    retained_out_of_month_rows = 0
     fare_sum = 0.0
     tip_sum = 0.0
     for batch in parquet.iter_batches(batch_size=250_000, columns=columns):
@@ -93,7 +99,16 @@ def month_totals(path: Path, valid_zones: set[int]) -> dict[str, float]:
             )
             & duration.between(MIN_DURATION_MIN, MAX_DURATION_MIN)
         )
-        clean = frame.loc[keep]
+        quality_clean = frame.loc[keep].copy()
+        clean_rows_before_month_filter += int(len(quality_clean))
+        in_month = pickup_in_declared_month(
+            quality_clean["tpep_pickup_datetime"], month
+        )
+        out_of_month_clean_rows_excluded += int((~in_month).sum())
+        clean = quality_clean.loc[in_month]
+        retained_out_of_month_rows += int(
+            (~pickup_in_declared_month(clean["tpep_pickup_datetime"], month)).sum()
+        )
         clean_rows += int(len(clean))
         fare_sum += float(clean["fare_amount"].clip(lower=0.0).sum())
         tip_sum += float(
@@ -101,6 +116,9 @@ def month_totals(path: Path, valid_zones: set[int]) -> dict[str, float]:
         )
     return {
         "clean_rows": clean_rows,
+        "clean_rows_before_month_filter": clean_rows_before_month_filter,
+        "out_of_month_clean_rows_excluded": out_of_month_clean_rows_excluded,
+        "retained_out_of_month_rows": retained_out_of_month_rows,
         "fare_sum": fare_sum,
         "tip_sum": tip_sum,
     }
@@ -135,8 +153,16 @@ def main() -> None:
         path = DATA_DIR / f"yellow_tripdata_{month}.parquet"
         if not path.exists():
             raise FileNotFoundError(path)
-        totals = month_totals(path, valid_zones)
-        monthly.append({"month": month, **totals})
+        totals = month_totals(path, valid_zones, month)
+        start, end = month_bounds(month)
+        monthly.append(
+            {
+                "month": month,
+                "expected_start_inclusive": start.isoformat(),
+                "expected_end_exclusive": end.isoformat(),
+                **totals,
+            }
+        )
 
     fare = sum(row["fare_sum"] for row in monthly)
     tips = sum(row["tip_sum"] for row in monthly)
@@ -150,7 +176,14 @@ def main() -> None:
     effective_retained = 1.0 - effective_withheld
     share_gap = abs(model.revenue_share - effective_retained)
     disclosed_gap = abs(model.fare_share_rate - effective_withheld)
-    passed = share_gap <= args.tolerance and disclosed_gap <= args.tolerance
+    retained_out_of_month = int(
+        sum(row["retained_out_of_month_rows"] for row in monthly)
+    )
+    passed = (
+        share_gap <= args.tolerance
+        and disclosed_gap <= args.tolerance
+        and retained_out_of_month == 0
+    )
     report = {
         "status": "FARE SHARE CALIBRATION PASSED"
         if passed
@@ -158,6 +191,13 @@ def main() -> None:
         "months": MONTHS,
         "monthly": monthly,
         "clean_rows": int(sum(row["clean_rows"] for row in monthly)),
+        "clean_rows_before_month_filter": int(
+            sum(row["clean_rows_before_month_filter"] for row in monthly)
+        ),
+        "out_of_month_clean_rows_excluded": int(
+            sum(row["out_of_month_clean_rows_excluded"] for row in monthly)
+        ),
+        "retained_out_of_month_rows": retained_out_of_month,
         "clean_fare_sum": fare,
         "clean_tip_sum": tips,
         "tip_share_of_modeled_receipts": tips / modeled_receipts,
@@ -173,6 +213,10 @@ def main() -> None:
             "35% of cleaned farebox revenue, excluding tips; all cleaned observed "
             "tips retained by driver; converted to a single V4-compatible share of "
             "fare+tip modeled receipts"
+        ),
+        "date_boundary_definition": (
+            "declared_month_start <= pickup datetime < next_month_start; "
+            "dropoff datetime is not month-restricted"
         ),
     }
     output = Path(args.output)

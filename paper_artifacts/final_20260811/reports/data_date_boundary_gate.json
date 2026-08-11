@@ -1,0 +1,104 @@
+{
+  "status": "DATE BOUNDARY FIX PASSED",
+  "project_version": "5.2.0",
+  "filter_definition": "declared_month_start <= tpep_pickup_datetime < next_month_start; dropoff datetime is not month-restricted",
+  "months": [
+    "2025-01",
+    "2025-02",
+    "2025-03",
+    "2025-04",
+    "2025-05",
+    "2025-06"
+  ],
+  "expected_service_days": 181,
+  "retained_unique_service_days": 181,
+  "clean_rows_out_of_month_excluded": 134,
+  "retained_out_of_month_rows": 0,
+  "checks": {
+    "all_months_present": true,
+    "retained_out_of_month_rows_is_zero": true,
+    "service_days_matches_calendar": true,
+    "retained_dates_match_declared_window": true
+  },
+  "failed": [],
+  "monthly": [
+    {
+      "month": "2025-01",
+      "expected_start_inclusive": "2025-01-01T00:00:00",
+      "expected_end_exclusive": "2025-02-01T00:00:00",
+      "expected_calendar_days": 31,
+      "raw_rows": 3475226,
+      "raw_valid_pickup_timestamp_rows": 3475226,
+      "clean_rows_before_month_filter": 3214138,
+      "clean_rows_out_of_month_excluded": 22,
+      "clean_rows_retained": 3214116,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 31
+    },
+    {
+      "month": "2025-02",
+      "expected_start_inclusive": "2025-02-01T00:00:00",
+      "expected_end_exclusive": "2025-03-01T00:00:00",
+      "expected_calendar_days": 28,
+      "raw_rows": 3577543,
+      "raw_valid_pickup_timestamp_rows": 3577543,
+      "clean_rows_before_month_filter": 3273806,
+      "clean_rows_out_of_month_excluded": 31,
+      "clean_rows_retained": 3273775,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 28
+    },
+    {
+      "month": "2025-03",
+      "expected_start_inclusive": "2025-03-01T00:00:00",
+      "expected_end_exclusive": "2025-04-01T00:00:00",
+      "expected_calendar_days": 31,
+      "raw_rows": 4145257,
+      "raw_valid_pickup_timestamp_rows": 4145257,
+      "clean_rows_before_month_filter": 3789409,
+      "clean_rows_out_of_month_excluded": 33,
+      "clean_rows_retained": 3789376,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 31
+    },
+    {
+      "month": "2025-04",
+      "expected_start_inclusive": "2025-04-01T00:00:00",
+      "expected_end_exclusive": "2025-05-01T00:00:00",
+      "expected_calendar_days": 30,
+      "raw_rows": 3970553,
+      "raw_valid_pickup_timestamp_rows": 3970553,
+      "clean_rows_before_month_filter": 3633903,
+      "clean_rows_out_of_month_excluded": 7,
+      "clean_rows_retained": 3633896,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 30
+    },
+    {
+      "month": "2025-05",
+      "expected_start_inclusive": "2025-05-01T00:00:00",
+      "expected_end_exclusive": "2025-06-01T00:00:00",
+      "expected_calendar_days": 31,
+      "raw_rows": 4591845,
+      "raw_valid_pickup_timestamp_rows": 4591845,
+      "clean_rows_before_month_filter": 4015853,
+      "clean_rows_out_of_month_excluded": 23,
+      "clean_rows_retained": 4015830,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 31
+    },
+    {
+      "month": "2025-06",
+      "expected_start_inclusive": "2025-06-01T00:00:00",
+      "expected_end_exclusive": "2025-07-01T00:00:00",
+      "expected_calendar_days": 30,
+      "raw_rows": 4322960,
+      "raw_valid_pickup_timestamp_rows": 4322960,
+      "clean_rows_before_month_filter": 3826887,
+      "clean_rows_out_of_month_excluded": 18,
+      "clean_rows_retained": 3826869,
+      "retained_out_of_month_rows": 0,
+      "retained_service_days": 30
+    }
+  ]
+}

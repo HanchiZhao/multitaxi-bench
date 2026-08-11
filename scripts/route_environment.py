@@ -11,10 +11,12 @@ Run from project root:
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import pickle
 from collections import defaultdict
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -72,6 +74,13 @@ from config import (
     ensure_directories,
 )
 from two_hour_environment import DynamicTaxiEnvironment
+from month_boundaries import (
+    declared_dates,
+    expected_calendar_days,
+    expected_service_days,
+    month_bounds,
+    pickup_in_declared_month,
+)
 
 TRIP_COLUMNS = [
     "tpep_pickup_datetime",
@@ -275,6 +284,7 @@ def clean_month(path: Path, valid_zones: set[int], month: str) -> pd.DataFrame:
     raw_count = len(df)
     df["tpep_pickup_datetime"] = pd.to_datetime(df["tpep_pickup_datetime"], errors="coerce")
     df["tpep_dropoff_datetime"] = pd.to_datetime(df["tpep_dropoff_datetime"], errors="coerce")
+    valid_pickup_timestamp_rows = int(df["tpep_pickup_datetime"].notna().sum())
     for c in ["PULocationID", "DOLocationID", "trip_distance", "fare_amount", "tip_amount"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=["tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID", "trip_distance", "fare_amount"])
@@ -291,6 +301,11 @@ def clean_month(path: Path, valid_zones: set[int], month: str) -> pd.DataFrame:
     # Revenue model intentionally excludes tolls/taxes/surcharges and remains configurable.
     df["driver_revenue"] = DRIVER_REVENUE_SHARE * (df["fare_amount"].clip(lower=0.0) + df["tip_amount"])
     df = df[df["driver_revenue"] > 0].copy()
+    clean_rows_before_month_filter = int(len(df))
+    month_start, next_month_start = month_bounds(month)
+    in_month = pickup_in_declared_month(df["tpep_pickup_datetime"], month)
+    clean_rows_out_of_month = int((~in_month).sum())
+    df = df.loc[in_month].copy()
     df["time_bin"] = (
         df["tpep_pickup_datetime"].dt.hour * (60 // TIME_BIN_MINUTES)
         + df["tpep_pickup_datetime"].dt.minute // TIME_BIN_MINUTES
@@ -300,7 +315,28 @@ def clean_month(path: Path, valid_zones: set[int], month: str) -> pd.DataFrame:
         + df["tpep_dropoff_datetime"].dt.minute // TIME_BIN_MINUTES
     ).astype(int)
     df["pickup_date"] = df["tpep_pickup_datetime"].dt.date
-    print(f"{month}: raw {raw_count:,} -> clean {len(df):,}")
+    retained_out_of_month = int(
+        (~pickup_in_declared_month(df["tpep_pickup_datetime"], month)).sum()
+    )
+    audit = {
+        "month": month,
+        "expected_start_inclusive": month_start.isoformat(),
+        "expected_end_exclusive": next_month_start.isoformat(),
+        "expected_calendar_days": expected_calendar_days(month),
+        "raw_rows": int(raw_count),
+        "raw_valid_pickup_timestamp_rows": valid_pickup_timestamp_rows,
+        "clean_rows_before_month_filter": clean_rows_before_month_filter,
+        "clean_rows_out_of_month_excluded": clean_rows_out_of_month,
+        "clean_rows_retained": int(len(df)),
+        "retained_out_of_month_rows": retained_out_of_month,
+        "retained_service_days": int(df["pickup_date"].nunique()),
+    }
+    df.attrs["date_boundary_audit"] = audit
+    print(
+        f"{month}: raw {raw_count:,} -> quality-clean "
+        f"{clean_rows_before_month_filter:,} -> in-month {len(df):,} "
+        f"(excluded {clean_rows_out_of_month:,})"
+    )
     return df
 
 
@@ -882,16 +918,70 @@ def build_environment(clean_first: bool = True, competition_scenario: str = DEFA
     zones, centroids = read_zone_data()
     valid_zones = set(centroids["zone_id"].astype(int))
     od_frames, pickup_frames, dropoff_frames = [], [], []
-    total_service_days = 0
+    all_service_dates: set[date] = set()
+    monthly_date_audits: List[Dict[str, object]] = []
     for month in MONTHS:
         parquet_path = DATA_DIR / f"yellow_tripdata_{month}.parquet"
         csv_path = DATA_DIR / f"yellow_tripdata_{month}.csv"
         trip_path = parquet_path if parquet_path.exists() else csv_path
         df = clean_month(trip_path, valid_zones, month)
+        monthly_date_audits.append(dict(df.attrs["date_boundary_audit"]))
+        all_service_dates.update(df["pickup_date"].unique().tolist())
         od, pickups, dropoffs, days = monthly_aggregates(df)
         od_frames.append(od); pickup_frames.append(pickups); dropoff_frames.append(dropoffs)
-        total_service_days += days
+        if days != expected_calendar_days(month):
+            raise RuntimeError(
+                f"Date-boundary gate failed for {month}: retained {days} service days, "
+                f"expected {expected_calendar_days(month)}"
+            )
         del df
+
+    total_service_days = int(len(all_service_dates))
+    expected_dates: set[date] = set()
+    for month in MONTHS:
+        expected_dates.update(declared_dates(month))
+    expected_days = expected_service_days(MONTHS)
+    excluded_out_of_month = int(
+        sum(int(row["clean_rows_out_of_month_excluded"]) for row in monthly_date_audits)
+    )
+    retained_out_of_month = int(
+        sum(int(row["retained_out_of_month_rows"]) for row in monthly_date_audits)
+    )
+    date_checks = {
+        "all_months_present": len(monthly_date_audits) == len(MONTHS),
+        "retained_out_of_month_rows_is_zero": retained_out_of_month == 0,
+        "service_days_matches_calendar": total_service_days == expected_days,
+        "retained_dates_match_declared_window": all_service_dates == expected_dates,
+    }
+    failed_date_checks = [name for name, passed in date_checks.items() if not passed]
+    date_boundary_report = {
+        "status": (
+            "DATE BOUNDARY FIX PASSED"
+            if not failed_date_checks
+            else "DATE BOUNDARY FIX FAILED"
+        ),
+        "project_version": "5.2.0",
+        "filter_definition": (
+            "declared_month_start <= tpep_pickup_datetime < next_month_start; "
+            "dropoff datetime is not month-restricted"
+        ),
+        "months": list(MONTHS),
+        "expected_service_days": expected_days,
+        "retained_unique_service_days": total_service_days,
+        "clean_rows_out_of_month_excluded": excluded_out_of_month,
+        "retained_out_of_month_rows": retained_out_of_month,
+        "checks": date_checks,
+        "failed": failed_date_checks,
+        "monthly": monthly_date_audits,
+    }
+    date_gate_path = PROCESSED_DIR / "data_date_boundary_gate.json"
+    date_gate_path.write_text(
+        json.dumps(date_boundary_report, indent=2), encoding="utf-8"
+    )
+    if failed_date_checks:
+        raise RuntimeError(
+            "Date-boundary gate failed: " + ", ".join(failed_date_checks)
+        )
 
     od_agg = combine_aggregates(od_frames, ["time_bin", "origin", "destination"])
     pickup_agg = combine_aggregates(pickup_frames, ["time_bin", "zone_id"])
@@ -915,7 +1005,9 @@ def build_environment(clean_first: bool = True, competition_scenario: str = DEFA
         "time_bin_minutes": TIME_BIN_MINUTES,
         "n_time_bins": N_TIME_BINS,
         "driver_revenue_share": DRIVER_REVENUE_SHARE,
-        "environment_schema_version": "4.0-final",
+        "environment_schema_version": "4.1-date-boundary-fix",
+        "project_version": "5.2.0",
+        "date_boundary_filter": date_boundary_report,
         "competition_scenario": competition_scenario,
         "competition_multipliers": COMPETITION_SCENARIO_MULTIPLIERS,
         "wait_model": "latent supply from decayed dropoffs-pickups plus neighbour diffusion; median-calibrated queue pressure",
@@ -959,6 +1051,10 @@ def build_environment(clean_first: bool = True, competition_scenario: str = DEFA
         "dynamic_node_rows": len(node_metrics), "dynamic_od_rows": len(od_metrics),
         "global_observed_od_pairs": len(global_od), "observed_od_time_cells": len(observed_export), "reposition_edges": len(reposition_edges),
         "service_days": total_service_days,
+        "environment_schema_version": "4.1-date-boundary-fix",
+        "date_boundary_gate_status": date_boundary_report["status"],
+        "out_of_month_clean_rows_excluded": excluded_out_of_month,
+        "retained_out_of_month_rows": retained_out_of_month,
         "observed_od_cells": int((od_metrics["observed_trip_count"] > 0).sum()),
         "imputed_od_cells": int((od_metrics["observed_trip_count"] <= 0).sum()),
         "mean_od_confidence": float(od_metrics["confidence"].mean()),

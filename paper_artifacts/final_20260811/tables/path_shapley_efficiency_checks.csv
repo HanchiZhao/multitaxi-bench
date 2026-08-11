@@ -1,0 +1,8 @@
+algorithm,scenario_id,path_id,players,method,v_empty,v_full,sum_shapley,efficiency_gap,passed
+wait_only,212,wait_only__scenario_212,10,exact,0.0,71.27476639838262,71.27476639838227,-3.552713678800501e-13,True
+highest_demand,192,highest_demand__scenario_192,8,exact,0.0,58.956123554938195,58.95612355493825,5.684341886080802e-14,True
+highest_income,68,highest_income__scenario_68,4,exact,0.0,55.48900924720629,55.48900924720629,0.0,True
+greedy_net_earnings,189,greedy_net_earnings__scenario_189,7,exact,0.0,64.46955000178934,64.46955000178934,0.0,True
+finite_horizon_value_iteration,118,finite_horizon_value_iteration__scenario_118,17,antithetic_mc,0.0,72.29172660248851,72.29172660248871,1.9895196601282805e-13,True
+q_learning,179,q_learning__scenario_179,8,exact,0.0,64.86571313761597,64.86571313761598,1.4210854715202004e-14,True
+dqn,212,dqn__scenario_212,10,exact,0.0,71.27476639838262,71.27476639838227,-3.552713678800501e-13,True

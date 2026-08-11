@@ -1,0 +1,8 @@
+algorithm,state_count,wait_action_rate,unique_actions
+wait_only,2104,1.0,1
+highest_demand,2104,0.05275665399239544,115
+highest_income,2104,0.04230038022813688,118
+greedy_net_earnings,2104,0.48574144486692017,53
+finite_horizon_value_iteration,2104,0.6326045627376425,75
+q_learning,2104,0.5399239543726235,76
+dqn,2104,0.535171102661597,102

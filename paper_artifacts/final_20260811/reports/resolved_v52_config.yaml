@@ -1,0 +1,59 @@
+project_version: 5.2.0
+experiment:
+  start_zone: 132
+  start_time: 08:00
+  episodes: 300
+  competition_scenario: medium
+  global_shapley_players: 10
+  global_shapley_permutations: 512
+run:
+  deterministic_cpu: true
+  strict_data_lock: true
+  download_data: false
+  include_q_learning: true
+  q_episodes: 15000
+  include_dqn: true
+  dqn_episodes: 12000
+  include_legacy: false
+  fast: false
+  skip_environment: false
+  skip_competition_sensitivity: false
+  fare_share_calibration_check: true
+cost_models:
+  primary: fare_share
+  v4_legacy:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.35
+    empty_cost_per_mile: 0.35
+  owner_operator:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.7
+    empty_cost_per_mile: 0.7
+  fixed_lease:
+    revenue_share: 1.0
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fixed_lease_per_hour: 9.0
+  fare_share:
+    revenue_share: 0.6979
+    occupied_cost_per_mile: 0.25
+    empty_cost_per_mile: 0.25
+    fixed_lease_per_hour: 0.0
+    fare_share_rate: 0.3021
+    source_farebox_share_rate: 0.35
+    tips_retained_fully: true
+path_shapley:
+  permutations: 512
+runtime:
+  active_cost_model: fare_share
+  active_revenue_share: 0.6979
+  active_occupied_cost_per_mile: 0.25
+  active_empty_cost_per_mile: 0.25
+  active_fixed_lease_per_hour: 0.0
+  download_requested_by_config: false
+  skip_download_cli: true
+  effective_download_performed: false
+  skip_v4_cli: false
+  date_boundary_fix: declared month start <= pickup < next month start; dropoff is
+    not month-restricted
+  environment_schema_version: 4.1-date-boundary-fix

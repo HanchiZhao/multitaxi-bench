@@ -1,5 +1,9 @@
 # Research contract
 
+This contract is frozen for MultiTaxi-Bench v5.2. Version 5.2 changes only the declared
+pickup-month boundary and its validation; it does not change the 120-minute decision
+problem, policy set, cost definition, scenario-bank design, or either Shapley game.
+
 ## Decision problem
 
 Given any NYC Taxi Zone and any start time from 00:00 through 24:00, one empty driver
@@ -24,6 +28,10 @@ waiting
 ```
 
 JFK Taxi Zone 132 at 08:00 is the main paper scenario, not a hard-coded objective.
+
+The formal data boundary is January through June 2025 with
+`declared_month_start <= pickup < next_declared_month_start`. Dropoff timestamps are not
+month-restricted because a valid trip may finish after the pickup month ends.
 
 ## Objective and cost models
 
@@ -53,4 +61,3 @@ V4 core does not propagate that term through every decision value.
 - Contributions are signed. Negative values are valid and are never clipped to zero.
 
 The two games answer different questions and must not be merged.
-

@@ -75,8 +75,8 @@ def _runtime_objective(cfg: dict, models: dict):
     missing = sorted(required - set(runtime))
     if missing:
         raise SystemExit(
-            "Resolved V5.1 config is missing runtime accounting fields: "
-            f"{missing}. Run scripts/run_v51.py; do not re-account an ambiguous "
+            "Resolved v5.2 config is missing runtime accounting fields: "
+            f"{missing}. Run scripts/run_v52.py; do not re-account an ambiguous "
             "policy_episode_results.csv directly from paper_main.yaml."
         )
     active_name = str(runtime["active_cost_model"])

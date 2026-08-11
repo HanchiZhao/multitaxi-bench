@@ -1,4 +1,4 @@
-"""Verify the canonical V5.1 output set and key numerical identities."""
+"""Verify the canonical v5.2 output set and key numerical identities."""
 from __future__ import annotations
 
 import argparse
@@ -26,11 +26,19 @@ def main() -> None:
         PROCESSED_DIR / "path_shapley_values.csv",
         PROCESSED_DIR / "path_value_calibration.csv",
         PROCESSED_DIR / "path_axiom_validation_results.csv",
+        PROCESSED_DIR / "data_date_boundary_gate.json",
         FIGURES_DIR / "algorithm_net_earnings_comparison.png",
         FIGURES_DIR / "policy_operating_net_earnings_comparison.png",
         FIGURES_DIR / "algorithm_path_shapley_bars.png",
         FIGURES_DIR / "algorithm_conditioned_path_shapley_maps.png",
     ]
+    if config.get("run", {}).get("strict_data_lock", False):
+        required.extend(
+            [
+                PROCESSED_DIR / "date_boundary_fix_validation.json",
+                PROCESSED_DIR / "data_lock_verification.json",
+            ]
+        )
     if not config.get("run", {}).get("skip_validation", False):
         required.extend(
             [
@@ -64,6 +72,7 @@ def main() -> None:
 
     report = {
         "status": "REPRODUCTION PASSED",
+        "project_version": "5.2.0",
         "primary_cost_model": model.name,
         "algorithms": sorted(episodes["algorithm"].unique().tolist()),
         "max_time_error": max_time_error,

@@ -1,4 +1,4 @@
-project_version: "5.1.0"
+project_version: "5.2.0"
 
 experiment:
   start_zone: 132
@@ -9,6 +9,7 @@ experiment:
   global_shapley_permutations: 512
 run:
   deterministic_cpu: true
+  strict_data_lock: true
   # Paper runs never download or overwrite data implicitly. Use
   # scripts/download_data.py explicitly, then verify the frozen lock.
   download_data: false

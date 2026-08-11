@@ -6,7 +6,7 @@ import hashlib
 import json
 import pandas as pd
 import pyarrow.parquet as pq
-from config import DATA_DIR, MONTHS
+from config import DATA_DIR, MONTHS, PROCESSED_DIR
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_PARQUET_COLUMNS = {
@@ -57,10 +57,13 @@ def main() -> None:
     if 'LocationID' not in lookup.columns or lookup['LocationID'].nunique() < 263:
         raise SystemExit('taxi_zone_lookup.csv is invalid or incomplete')
 
+    verified_hashes = {}
+    lock_path = None
     if args.strict_lock:
         root_lock = ROOT / 'data_lock.json'
         local_lock = DATA_DIR / 'checksums.lock.json'
         lockp = root_lock if root_lock.exists() else local_lock
+        lock_path = str(lockp)
         if not lockp.exists():
             raise SystemExit('No data checksum lock found. Expected data_lock.json or data/checksums.lock.json')
         lock = json.loads(lockp.read_text(encoding='utf-8'))
@@ -72,10 +75,28 @@ def main() -> None:
                 continue
             actual_size = p.stat().st_size
             actual_sha = sha256(p)
+            verified_hashes[name] = {
+                'sha256': actual_sha,
+                'size_bytes': int(actual_size),
+            }
             if actual_sha != meta.get('sha256') or actual_size != meta.get('size_bytes'):
                 bad.append(f'{name}: checksum/size mismatch')
         if bad:
             raise SystemExit('Data lock mismatch:\n' + '\n'.join(bad))
+
+    report = {
+        'status': 'DATA LOCK VERIFICATION PASSED' if args.strict_lock else 'DATA VERIFICATION PASSED',
+        'strict_lock': bool(args.strict_lock),
+        'lock_path': lock_path,
+        'months': list(MONTHS),
+        'row_counts': row_counts,
+        'verified_files': verified_hashes,
+        'lookup_location_ids': int(lookup['LocationID'].nunique()),
+    }
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    (PROCESSED_DIR / 'data_lock_verification.json').write_text(
+        json.dumps(report, indent=2), encoding='utf-8'
+    )
 
     print('DATA VERIFICATION PASSED')
     print(f'Months verified: {len(MONTHS)} | lookup LocationIDs: {lookup["LocationID"].nunique()}')

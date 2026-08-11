@@ -1,0 +1,527 @@
+{
+  "status": "FINAL EXPERIMENT ACCEPTANCE PASSED",
+  "checks": {
+    "primary_is_fare_share": true,
+    "project_version_is_5_2_0": true,
+    "frozen_formal_config": true,
+    "frozen_primary_cost_coefficients": true,
+    "reproduction_passed": true,
+    "research_contract_passed": true,
+    "v4_core_authorized_fix_passed": true,
+    "date_boundary_fix_passed": true,
+    "correct_181_day_exposure": true,
+    "date_fixed_environment_schema": true,
+    "cost_accounting_passed": true,
+    "fare_share_calibration_passed": true,
+    "exact_seven_policy_set": true,
+    "all_algorithms_have_300_common_scenarios": true,
+    "strict_120_minute_accounting": true,
+    "primary_earnings_scale_reasonable": true,
+    "global_hard_axioms_passed": true,
+    "path_hard_axioms_passed": true,
+    "path_efficiency": true,
+    "path_occurrence_ids_unique": true,
+    "signed_negative_values_preserved": true,
+    "q_learning_policy_coverage_reasonable": true,
+    "dqn_uses_trained_model": true,
+    "imputation_validation_finite": true,
+    "competition_sensitivity_complete": true,
+    "ablation_and_baseline_sensitivity_present": true,
+    "bars_and_map_png_generated": true
+  },
+  "failed": [],
+  "project_version": "5.2.0",
+  "supersedes": "v5.1 formal results affected by the 194-versus-181 service-day exposure defect",
+  "details": {
+    "frozen_formal_config": {
+      "start_zone": 132,
+      "start_time": "08:00",
+      "evaluation_episodes_per_policy": 300,
+      "q_learning_training_episodes": 15000,
+      "double_dqn_training_episodes": 12000
+    },
+    "algorithms": [
+      "dqn",
+      "finite_horizon_value_iteration",
+      "greedy_net_earnings",
+      "highest_demand",
+      "highest_income",
+      "q_learning",
+      "wait_only"
+    ],
+    "evaluation_episode_total": 2100,
+    "scenario_counts": {
+      "dqn": 300,
+      "finite_horizon_value_iteration": 300,
+      "greedy_net_earnings": 300,
+      "highest_demand": 300,
+      "highest_income": 300,
+      "q_learning": 300,
+      "wait_only": 300
+    },
+    "max_abs_time_accounting_error": 4.263256414560601e-14,
+    "primary_cost_model": "fare_share",
+    "top_algorithm": "finite_horizon_value_iteration",
+    "top_mean_operating_net_earnings_2h": 72.32454130101509,
+    "earnings_acceptance_window": [
+      60.0,
+      80.0
+    ],
+    "algorithm_means": {
+      "finite_horizon_value_iteration": 72.32454130101509,
+      "wait_only": 71.3442615823053,
+      "dqn": 71.02956651683253,
+      "q_learning": 64.92981778397329,
+      "greedy_net_earnings": 64.39906351002045,
+      "highest_demand": 58.70534546086861,
+      "highest_income": 55.302009323064
+    },
+    "global_hard_axiom_failures": [],
+    "path_hard_axiom_failures": [],
+    "negative_path_occurrence_count": 40,
+    "learning_policy_diagnostics": [
+      {
+        "algorithm": "q_learning",
+        "decision_count": 1762,
+        "q_table_state_count": 2408.0,
+        "q_table_action_count": 1760.0,
+        "fallback_action_count": 2,
+        "unseen_state_count": 2,
+        "no_valid_seen_action_count": 0.0,
+        "q_table_action_rate": 0.9988649262,
+        "fallback_action_rate": 0.0011350738,
+        "unseen_state_rate": 0.0011350738,
+        "model_action_count": null,
+        "model_action_rate": null
+      },
+      {
+        "algorithm": "dqn",
+        "decision_count": 2165,
+        "q_table_state_count": null,
+        "q_table_action_count": null,
+        "fallback_action_count": 0,
+        "unseen_state_count": 0,
+        "no_valid_seen_action_count": null,
+        "q_table_action_rate": null,
+        "fallback_action_rate": 0.0,
+        "unseen_state_rate": 0.0,
+        "model_action_count": 2165.0,
+        "model_action_rate": 1.0
+      }
+    ],
+    "imputation_holdout_summary": [
+      {
+        "mae": 0.6606342589,
+        "rmse": 0.8839144404,
+        "bias": 0.0334009073,
+        "mape_percent": 6.2891177768,
+        "spearman_rank_correlation": 0.9667793522,
+        "metric": "driver_revenue",
+        "n_holdout_cells": 2000,
+        "min_observed_trip_count": 20
+      },
+      {
+        "mae": 1.2443479709,
+        "rmse": 1.8443653263,
+        "bias": 0.7681887325,
+        "mape_percent": 11.5054635991,
+        "spearman_rank_correlation": 0.969357305,
+        "metric": "duration_min",
+        "n_holdout_cells": 2000,
+        "min_observed_trip_count": 20
+      },
+      {
+        "mae": 0.0945314797,
+        "rmse": 0.1378776328,
+        "bias": -0.0297888547,
+        "mape_percent": 5.6314922633,
+        "spearman_rank_correlation": 0.9873798282,
+        "metric": "distance_miles",
+        "n_holdout_cells": 2000,
+        "min_observed_trip_count": 20
+      }
+    ],
+    "competition_scenarios": [
+      "high",
+      "low",
+      "medium"
+    ],
+    "competition_rows": 21,
+    "ablation_summary": [
+      {
+        "ablation_type": "cumulative_top_shapley",
+        "ablation_rank": 1,
+        "mean_absolute_drop": 0.4148365362,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.5793849987,
+        "n": 1
+      },
+      {
+        "ablation_type": "cumulative_top_shapley",
+        "ablation_rank": 2,
+        "mean_absolute_drop": 0.4720318572,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.6592673333,
+        "n": 1
+      },
+      {
+        "ablation_type": "cumulative_top_shapley",
+        "ablation_rank": 3,
+        "mean_absolute_drop": 0.494036348,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.6900000939,
+        "n": 1
+      },
+      {
+        "ablation_type": "cumulative_top_shapley",
+        "ablation_rank": 4,
+        "mean_absolute_drop": 0.5194422415,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.7254834524,
+        "n": 1
+      },
+      {
+        "ablation_type": "cumulative_top_shapley",
+        "ablation_rank": 5,
+        "mean_absolute_drop": 0.6171740343,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.8619813973,
+        "n": 1
+      },
+      {
+        "ablation_type": "random_control",
+        "ablation_rank": 1,
+        "mean_absolute_drop": 0.0712591248,
+        "std_absolute_drop": 0.1494805277,
+        "mean_percentage_drop": 0.0995246665,
+        "n": 20
+      },
+      {
+        "ablation_type": "random_control",
+        "ablation_rank": 2,
+        "mean_absolute_drop": 0.0341877959,
+        "std_absolute_drop": 0.0929257473,
+        "mean_percentage_drop": 0.0477486777,
+        "n": 20
+      },
+      {
+        "ablation_type": "random_control",
+        "ablation_rank": 3,
+        "mean_absolute_drop": 0.1669887028,
+        "std_absolute_drop": 0.1949973939,
+        "mean_percentage_drop": 0.2332262011,
+        "n": 20
+      },
+      {
+        "ablation_type": "random_control",
+        "ablation_rank": 4,
+        "mean_absolute_drop": 0.2007607251,
+        "std_absolute_drop": 0.1922408458,
+        "mean_percentage_drop": 0.2803941849,
+        "n": 20
+      },
+      {
+        "ablation_type": "random_control",
+        "ablation_rank": 5,
+        "mean_absolute_drop": 0.2192334839,
+        "std_absolute_drop": 0.2006606319,
+        "mean_percentage_drop": 0.3061943217,
+        "n": 20
+      },
+      {
+        "ablation_type": "single_top_shapley",
+        "ablation_rank": 1,
+        "mean_absolute_drop": 0.4148365362,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.5793849987,
+        "n": 1
+      },
+      {
+        "ablation_type": "single_top_shapley",
+        "ablation_rank": 2,
+        "mean_absolute_drop": 0.0572078479,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.0798998304,
+        "n": 1
+      },
+      {
+        "ablation_type": "single_top_shapley",
+        "ablation_rank": 3,
+        "mean_absolute_drop": 0.006797071,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.0094931873,
+        "n": 1
+      },
+      {
+        "ablation_type": "single_top_shapley",
+        "ablation_rank": 4,
+        "mean_absolute_drop": 0.0005888554,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.0008224299,
+        "n": 1
+      },
+      {
+        "ablation_type": "single_top_shapley",
+        "ablation_rank": 5,
+        "mean_absolute_drop": 0.0009437546,
+        "std_absolute_drop": null,
+        "mean_percentage_drop": 0.001318103,
+        "n": 1
+      }
+    ],
+    "baseline_sensitivity_summary": [
+      {
+        "baseline_a": "wait_only",
+        "baseline_b": "highest_demand_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      },
+      {
+        "baseline_a": "wait_only",
+        "baseline_b": "highest_income_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      },
+      {
+        "baseline_a": "wait_only",
+        "baseline_b": "greedy_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      },
+      {
+        "baseline_a": "highest_demand_external",
+        "baseline_b": "highest_income_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      },
+      {
+        "baseline_a": "highest_demand_external",
+        "baseline_b": "greedy_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      },
+      {
+        "baseline_a": "highest_income_external",
+        "baseline_b": "greedy_external",
+        "spearman_rank_correlation": 1.0,
+        "spearman_value_correlation": 1.0,
+        "top5_jaccard_overlap": 1.0
+      }
+    ],
+    "figure_dimensions": {
+      "bars": [
+        4008,
+        5205
+      ],
+      "map": [
+        3899,
+        6047
+      ]
+    },
+    "paired_vs_wait_only": [
+      {
+        "algorithm": "dqn",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": -0.3146950655,
+        "paired_ci_lower": -1.8499787203,
+        "paired_ci_upper": 1.2205885894,
+        "win_rate": 0.4166666667,
+        "tie_rate": 0.1733333333,
+        "loss_rate": 0.41
+      },
+      {
+        "algorithm": "finite_horizon_value_iteration",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": 0.9802797187,
+        "paired_ci_lower": -0.3934978002,
+        "paired_ci_upper": 2.3540572376,
+        "win_rate": 0.35,
+        "tie_rate": 0.34,
+        "loss_rate": 0.31
+      },
+      {
+        "algorithm": "greedy_net_earnings",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": -6.9451980723,
+        "paired_ci_lower": -8.8133930565,
+        "paired_ci_upper": -5.077003088,
+        "win_rate": 0.1733333333,
+        "tie_rate": 0.1066666667,
+        "loss_rate": 0.72
+      },
+      {
+        "algorithm": "highest_demand",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": -12.6389161214,
+        "paired_ci_lower": -14.7056697761,
+        "paired_ci_upper": -10.5721624667,
+        "win_rate": 0.1533333333,
+        "tie_rate": 0.02,
+        "loss_rate": 0.8266666667
+      },
+      {
+        "algorithm": "highest_income",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": -16.0422522592,
+        "paired_ci_lower": -18.2374909069,
+        "paired_ci_upper": -13.8470136116,
+        "win_rate": 0.0766666667,
+        "tie_rate": 0.04,
+        "loss_rate": 0.8833333333
+      },
+      {
+        "algorithm": "q_learning",
+        "baseline": "wait_only",
+        "paired_scenarios": 300,
+        "mean_paired_gain": -6.4144437983,
+        "paired_ci_lower": -8.2800756688,
+        "paired_ci_upper": -4.5488119279,
+        "win_rate": 0.2766666667,
+        "tie_rate": 0.1033333333,
+        "loss_rate": 0.62
+      }
+    ],
+    "global_axioms": [
+      {
+        "test": "Efficiency",
+        "category": "standard_shapley",
+        "status": "PASS",
+        "statistic": 2.220446049e-16,
+        "threshold": "abs(gap) <= numerical tolerance",
+        "hard_axiom": true,
+        "details": "sum(phi)=0.71129551; v(N)-v(empty)=0.71129551"
+      },
+      {
+        "test": "AIM",
+        "category": "dynamic_monotonicity",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": ">= -1e-07",
+        "hard_axiom": true,
+        "details": "violations=0/5120; adding a zone only enlarges the action set"
+      },
+      {
+        "test": "Dummy",
+        "category": "standard_shapley",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "0 failures",
+        "hard_axiom": true,
+        "details": "dummy_zones=[130, 161]; failures=[]"
+      },
+      {
+        "test": "Symmetry",
+        "category": "standard_shapley",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "0 failures",
+        "hard_axiom": true,
+        "details": "symmetric_pairs=[(130, 161)]; failures=[]"
+      },
+      {
+        "test": "FMD",
+        "category": "dynamic_dominance_diagnostic",
+        "status": "PASS",
+        "statistic": 0.987804878,
+        "threshold": ">= 0.50 recommended",
+        "hard_axiom": false,
+        "details": "Spearman correlation between singleton strategic gain and Shapley value; complementarity can reduce correlation"
+      },
+      {
+        "test": "CG",
+        "category": "imputation_robustness",
+        "status": "PASS",
+        "statistic": -1.50195e-05,
+        "threshold": "value drop <=20% and top-5 Jaccard >=0.50",
+        "hard_axiom": false,
+        "details": "filtered_full=71.5995; original_full=71.5995; top5_jaccard=1.000"
+      },
+      {
+        "test": "DIM",
+        "category": "income_monotonicity",
+        "status": "PASS",
+        "statistic": 0.1663877027,
+        "threshold": ">= 0",
+        "hard_axiom": true,
+        "details": "zone=186; singleton change=0.146292; revenue +5.0%"
+      },
+      {
+        "test": "DME",
+        "category": "diminishing_returns_diagnostic",
+        "status": "INFO",
+        "statistic": 0.2016430784,
+        "threshold": "non-increasing increments (diagnostic only)",
+        "hard_axiom": false,
+        "details": "zone=186; values=[71.59946098977616, 71.76584869244249, 71.96202330675845, 72.163666385148]; increments=[0.1663877026663272, 0.1961746143159644, 0.20164307838955153]; network complementarity may legitimately violate DME"
+      }
+    ],
+    "path_axioms": [
+      {
+        "test": "Path Efficiency",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "<=1e-6",
+        "details": "sum(phi)=v(full)-v(empty) for each algorithm-conditioned path",
+        "hard_axiom": true
+      },
+      {
+        "test": "Occurrence Identity",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "0 duplicate IDs",
+        "details": "same zone may recur, but algorithm/scenario/path-position IDs remain unique",
+        "hard_axiom": true
+      },
+      {
+        "test": "Repair Feasibility",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "finite and elapsed<=120",
+        "details": "baseline bridges use the preserved V4 route model; horizon truncation is feasible, not a failure",
+        "hard_axiom": true
+      },
+      {
+        "test": "Full-Path Replay Calibration",
+        "status": "PASS",
+        "statistic": 0.0,
+        "threshold": "<=1e-6",
+        "details": "replaying the full occurrence set must reproduce the representative episode under the same cost model",
+        "hard_axiom": true
+      },
+      {
+        "test": "Signed Contribution",
+        "status": "INFO",
+        "statistic": 0.625,
+        "threshold": "diagnostic",
+        "details": "negative values are legitimate for costly or redundant path occurrences",
+        "hard_axiom": false
+      },
+      {
+        "test": "Same-Zone Context Sensitivity",
+        "status": "PASS",
+        "statistic": 1.0,
+        "threshold": ">0 expected",
+        "details": "same zone is not collapsed across algorithms, scenarios, or positions",
+        "hard_axiom": false
+      },
+      {
+        "test": "Path DIM",
+        "status": "PASS",
+        "statistic": 3.035202275,
+        "threshold": ">=-1e-6",
+        "details": "actual +5% revenue perturbation and Shapley recomputation for highest_income occurrence 1; full_value_change=3.035202",
+        "hard_axiom": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "old_results_available": true,
+  "algorithm_changes": [
+    {
+      "algorithm": "finite_horizon_value_iteration",
+      "v5_1_mean_operating_net_earnings_2h": 72.3656418145,
+      "v5_2_mean_operating_net_earnings_2h": 72.324541301,
+      "absolute_change_usd_2h": -0.0411005135,
+      "percent_change": -0.056795618
+    },
+    {
+      "algorithm": "wait_only",
+      "v5_1_mean_operating_net_earnings_2h": 71.5436931034,
+      "v5_2_mean_operating_net_earnings_2h": 71.3442615823,
+      "absolute_change_usd_2h": -0.1994315211,
+      "percent_change": -0.2787548594
+    },
+    {
+      "algorithm": "dqn",
+      "v5_1_mean_operating_net_earnings_2h": 72.5034637298,
+      "v5_2_mean_operating_net_earnings_2h": 71.0295665168,
+      "absolute_change_usd_2h": -1.473897213,
+      "percent_change": -2.0328645518
+    },
+    {
+      "algorithm": "q_learning",
+      "v5_1_mean_operating_net_earnings_2h": 64.5307479295,
+      "v5_2_mean_operating_net_earnings_2h": 64.929817784,
+      "absolute_change_usd_2h": 0.3990698544,
+      "percent_change": 0.6184181452
+    },
+    {
+      "algorithm": "greedy_net_earnings",
+      "v5_1_mean_operating_net_earnings_2h": 64.8054727138,
+      "v5_2_mean_operating_net_earnings_2h": 64.39906351,
+      "absolute_change_usd_2h": -0.4064092038,
+      "percent_change": -0.6271217333
+    },
+    {
+      "algorithm": "highest_demand",
+      "v5_1_mean_operating_net_earnings_2h": 58.6554501878,
+      "v5_2_mean_operating_net_earnings_2h": 58.7053454609,
+      "absolute_change_usd_2h": 0.0498952731,
+      "percent_change": 0.0850650245
+    },
+    {
+      "algorithm": "highest_income",
+      "v5_1_mean_operating_net_earnings_2h": 55.4259563309,
+      "v5_2_mean_operating_net_earnings_2h": 55.3020093231,
+      "absolute_change_usd_2h": -0.1239470078,
+      "percent_change": -0.2236262863
+    }
+  ],
+  "paired_changes": [
+    {
+      "algorithm": "dqn",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": 0.9597706264,
+      "v5_1_ci_lower": -0.4329283981,
+      "v5_1_ci_upper": 2.3524696509,
+      "v5_2_mean_paired_gain": -0.3146950655,
+      "v5_2_ci_lower": -1.8499787203,
+      "v5_2_ci_upper": 1.2205885894,
+      "paired_gain_change": -1.2744656918
+    },
+    {
+      "algorithm": "finite_horizon_value_iteration",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": 0.8219487111,
+      "v5_1_ci_lower": -0.541820458,
+      "v5_1_ci_upper": 2.1857178802,
+      "v5_2_mean_paired_gain": 0.9802797187,
+      "v5_2_ci_lower": -0.3934978002,
+      "v5_2_ci_upper": 2.3540572376,
+      "paired_gain_change": 0.1583310076
+    },
+    {
+      "algorithm": "greedy_net_earnings",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": -6.7382203896,
+      "v5_1_ci_lower": -8.6026660555,
+      "v5_1_ci_upper": -4.8737747237,
+      "v5_2_mean_paired_gain": -6.9451980723,
+      "v5_2_ci_lower": -8.8133930565,
+      "v5_2_ci_upper": -5.077003088,
+      "paired_gain_change": -0.2069776827
+    },
+    {
+      "algorithm": "highest_demand",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": -12.8882429156,
+      "v5_1_ci_lower": -14.9688707466,
+      "v5_1_ci_upper": -10.8076150847,
+      "v5_2_mean_paired_gain": -12.6389161214,
+      "v5_2_ci_lower": -14.7056697761,
+      "v5_2_ci_upper": -10.5721624667,
+      "paired_gain_change": 0.2493267942
+    },
+    {
+      "algorithm": "highest_income",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": -16.1177367726,
+      "v5_1_ci_lower": -18.3219611323,
+      "v5_1_ci_upper": -13.9135124128,
+      "v5_2_mean_paired_gain": -16.0422522592,
+      "v5_2_ci_lower": -18.2374909069,
+      "v5_2_ci_upper": -13.8470136116,
+      "paired_gain_change": 0.0754845133
+    },
+    {
+      "algorithm": "q_learning",
+      "baseline": "wait_only",
+      "v5_1_mean_paired_gain": -7.0129451739,
+      "v5_1_ci_lower": -8.7570563361,
+      "v5_1_ci_upper": -5.2688340117,
+      "v5_2_mean_paired_gain": -6.4144437983,
+      "v5_2_ci_lower": -8.2800756688,
+      "v5_2_ci_upper": -4.5488119279,
+      "paired_gain_change": 0.5985013756
+    }
+  ]
+}

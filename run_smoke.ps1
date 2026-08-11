@@ -26,8 +26,8 @@ try {
     & $Python scripts\generate_mock_data.py --trips-per-month 1200 --force
     if ($LASTEXITCODE -ne 0) { throw "Mock-data generation failed." }
 
-    Write-Host "Running the complete V5.1 smoke pipeline..." -ForegroundColor Yellow
-    & $Python scripts\run_v51.py --config configs\smoke.yaml --skip-download
+    Write-Host "Running the complete V5.2 smoke pipeline..." -ForegroundColor Yellow
+    & $Python scripts\run_v52.py --config configs\smoke.yaml --skip-download
     if ($LASTEXITCODE -ne 0) { throw "Smoke pipeline failed." }
 }
 finally {

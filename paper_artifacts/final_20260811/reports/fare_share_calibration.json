@@ -1,0 +1,96 @@
+{
+  "status": "FARE SHARE CALIBRATION PASSED",
+  "months": [
+    "2025-01",
+    "2025-02",
+    "2025-03",
+    "2025-04",
+    "2025-05",
+    "2025-06"
+  ],
+  "monthly": [
+    {
+      "month": "2025-01",
+      "expected_start_inclusive": "2025-01-01T00:00:00",
+      "expected_end_exclusive": "2025-02-01T00:00:00",
+      "clean_rows": 3214116,
+      "clean_rows_before_month_filter": 3214138,
+      "out_of_month_clean_rows_excluded": 22,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 56778129.06,
+      "tip_sum": 9947994.01
+    },
+    {
+      "month": "2025-02",
+      "expected_start_inclusive": "2025-02-01T00:00:00",
+      "expected_end_exclusive": "2025-03-01T00:00:00",
+      "clean_rows": 3273775,
+      "clean_rows_before_month_filter": 3273806,
+      "out_of_month_clean_rows_excluded": 31,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 58195597.46000001,
+      "tip_sum": 9443226.53
+    },
+    {
+      "month": "2025-03",
+      "expected_start_inclusive": "2025-03-01T00:00:00",
+      "expected_end_exclusive": "2025-04-01T00:00:00",
+      "clean_rows": 3789376,
+      "clean_rows_before_month_filter": 3789409,
+      "out_of_month_clean_rows_excluded": 33,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 71508447.02000001,
+      "tip_sum": 11382719.010000002
+    },
+    {
+      "month": "2025-04",
+      "expected_start_inclusive": "2025-04-01T00:00:00",
+      "expected_end_exclusive": "2025-05-01T00:00:00",
+      "clean_rows": 3633896,
+      "clean_rows_before_month_filter": 3633903,
+      "out_of_month_clean_rows_excluded": 7,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 68940236.56,
+      "tip_sum": 11304958.46
+    },
+    {
+      "month": "2025-05",
+      "expected_start_inclusive": "2025-05-01T00:00:00",
+      "expected_end_exclusive": "2025-06-01T00:00:00",
+      "clean_rows": 4015830,
+      "clean_rows_before_month_filter": 4015853,
+      "out_of_month_clean_rows_excluded": 23,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 80797367.96999998,
+      "tip_sum": 12390984.82
+    },
+    {
+      "month": "2025-06",
+      "expected_start_inclusive": "2025-06-01T00:00:00",
+      "expected_end_exclusive": "2025-07-01T00:00:00",
+      "clean_rows": 3826869,
+      "clean_rows_before_month_filter": 3826887,
+      "out_of_month_clean_rows_excluded": 18,
+      "retained_out_of_month_rows": 0,
+      "fare_sum": 77883187.18,
+      "tip_sum": 11198184.729999999
+    }
+  ],
+  "clean_rows": 21753862,
+  "clean_rows_before_month_filter": 21753996,
+  "out_of_month_clean_rows_excluded": 134,
+  "retained_out_of_month_rows": 0,
+  "clean_fare_sum": 414102965.25,
+  "clean_tip_sum": 65668067.56,
+  "tip_share_of_modeled_receipts": 0.13687376491945485,
+  "source_farebox_share_rate": 0.35,
+  "derived_effective_withheld_share_of_fare_plus_tip": 0.30209418227819074,
+  "derived_effective_driver_revenue_share": 0.6979058177218093,
+  "configured_fare_share_rate": 0.3021,
+  "configured_driver_revenue_share": 0.6979,
+  "configured_revenue_share_gap": 5.817721809298071e-06,
+  "configured_fare_share_gap": 5.81772180924256e-06,
+  "tolerance": 0.002,
+  "definition": "35% of cleaned farebox revenue, excluding tips; all cleaned observed tips retained by driver; converted to a single V4-compatible share of fare+tip modeled receipts",
+  "date_boundary_definition": "declared_month_start <= pickup datetime < next_month_start; dropoff datetime is not month-restricted"
+}

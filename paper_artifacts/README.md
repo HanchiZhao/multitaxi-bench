@@ -1,10 +1,13 @@
 # Curated paper artifacts
 
-This directory contains selected reports, tables, and figures copied from the accepted
-2026-08-07 formal run. `SHA256SUMS.csv` records the byte identity of each artifact.
+`final_20260811/` is the accepted MultiTaxi-Bench v5.2 evidence set. It contains selected
+machine reports, compact and episode-level tables, and final figures copied or redrawn
+from the accepted 2026-08-11 run. Redrawn figures use the same accepted CSV values; only
+label placement and layout changed.
 
-These files are evidence and convenient review material. They do not replace the canonical
-regeneration path: strict data verification followed by `run_paper.ps1` or `run_paper.sh`.
-Raw TLC Parquet files, full runtime caches, trained weights, and logs are intentionally not
-stored here.
+`SHA256SUMS.csv` records the byte identity of every artifact in the folder. Verify it with
+`python scripts/verify_release_artifacts.py`.
 
+These files support review but do not replace the canonical reproduction path: strict
+data verification followed by `run_paper.ps1` or `run_paper.sh`. Raw TLC Parquet, full
+environment/OD caches, trained weights, and logs are intentionally excluded.

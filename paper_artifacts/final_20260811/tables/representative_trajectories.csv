@@ -1,0 +1,8 @@
+algorithm,scenario_id,selection_method,net_earnings_2h,completed_trips,first_action,wait_decisions,reposition_decisions,waiting_minutes,empty_minutes,occupied_minutes,unfinished_occupied_minutes,terminal_unused_minutes,accounted_minutes,time_accounting_error
+wait_only,212,jointly_closest_to_mean_earnings_and_mean_trip_count,71.27476639838262,3,WAIT,6,0,15.949622756478984,0.0,91.32232917610202,12.72804806741901,0.0,120.00000000000001,-1.4210854715202004e-14
+highest_demand,192,jointly_closest_to_mean_earnings_and_mean_trip_count,58.95612355493821,2,WAIT,4,1,9.539296888476583,18.687104369149022,88.11146960122845,3.6621291411459396,0.0,119.99999999999999,1.4210854715202004e-14
+highest_income,68,jointly_closest_to_mean_earnings_and_mean_trip_count,55.48900924720629,1,WAIT,2,1,1.850576325896109,35.171797950226974,82.97762572387691,0.0,0.0,120.0,0.0
+greedy_net_earnings,189,jointly_closest_to_mean_earnings_and_mean_trip_count,64.46955000178934,2,WAIT,4,1,8.940255676936216,9.031262043181538,102.02848227988224,0.0,0.0,120.0,0.0
+finite_horizon_value_iteration,118,jointly_closest_to_mean_earnings_and_mean_trip_count,72.29172660248851,3,WAIT,13,1,49.04129173568277,11.58025545605091,59.37845280826633,0.0,0.0,120.00000000000001,-1.4210854715202004e-14
+q_learning,179,jointly_closest_to_mean_earnings_and_mean_trip_count,64.86571313761596,2,WAIT,5,1,20.79047606408144,27.532509761026773,71.6770141748918,0.0,0.0,120.0,0.0
+dqn,212,jointly_closest_to_mean_earnings_and_mean_trip_count,71.27476639838262,3,WAIT,6,0,15.949622756478984,0.0,91.32232917610202,12.72804806741901,0.0,120.00000000000001,-1.4210854715202004e-14

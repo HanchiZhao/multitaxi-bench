@@ -1,4 +1,4 @@
-project_version: "5.1.0"
+project_version: "5.2.0"
 
 experiment:
   start_zone: 1
@@ -10,6 +10,7 @@ experiment:
 
 run:
   deterministic_cpu: true
+  strict_data_lock: false
   download_data: false
   include_q_learning: false
   include_dqn: false

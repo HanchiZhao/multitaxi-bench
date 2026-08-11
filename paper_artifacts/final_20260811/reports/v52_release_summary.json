@@ -1,0 +1,129 @@
+{
+  "status": "V5.2 RELEASE ARTIFACTS PASSED",
+  "generated_at_utc": "2026-08-11T05:41:00.350551+00:00",
+  "project_version": "5.2.0",
+  "formal_acceptance": "FINAL EXPERIMENT ACCEPTANCE PASSED",
+  "date_boundary_validation": "V5.2 DATE BOUNDARY VALIDATION PASSED",
+  "service_days": 181,
+  "excluded_out_of_month_clean_rows": 134,
+  "top_algorithm": "finite_horizon_value_iteration",
+  "top_mean_operating_net_earnings_2h": 72.32454130101509,
+  "algorithm_results": [
+    {
+      "algorithm": "finite_horizon_value_iteration",
+      "mean_primary_operating_net_earnings_2h": 72.324541301,
+      "ci_lower": 70.326151759,
+      "ci_upper": 74.3229308431
+    },
+    {
+      "algorithm": "wait_only",
+      "mean_primary_operating_net_earnings_2h": 71.3442615823,
+      "ci_lower": 69.2744608695,
+      "ci_upper": 73.4140622951
+    },
+    {
+      "algorithm": "dqn",
+      "mean_primary_operating_net_earnings_2h": 71.0295665168,
+      "ci_lower": 69.0378189247,
+      "ci_upper": 73.0213141089
+    },
+    {
+      "algorithm": "q_learning",
+      "mean_primary_operating_net_earnings_2h": 64.929817784,
+      "ci_lower": 62.9695922887,
+      "ci_upper": 66.8900432792
+    },
+    {
+      "algorithm": "greedy_net_earnings",
+      "mean_primary_operating_net_earnings_2h": 64.39906351,
+      "ci_lower": 62.3036851765,
+      "ci_upper": 66.4944418435
+    },
+    {
+      "algorithm": "highest_demand",
+      "mean_primary_operating_net_earnings_2h": 58.7053454609,
+      "ci_lower": 56.9647727707,
+      "ci_upper": 60.445918151
+    },
+    {
+      "algorithm": "highest_income",
+      "mean_primary_operating_net_earnings_2h": 55.3020093231,
+      "ci_lower": 53.2095932289,
+      "ci_upper": 57.3944254172
+    }
+  ],
+  "paired_vs_wait_only": [
+    {
+      "algorithm": "dqn",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": -0.3146950655,
+      "paired_ci_lower": -1.8499787203,
+      "paired_ci_upper": 1.2205885894,
+      "win_rate": 0.4166666667,
+      "tie_rate": 0.1733333333,
+      "loss_rate": 0.41
+    },
+    {
+      "algorithm": "finite_horizon_value_iteration",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": 0.9802797187,
+      "paired_ci_lower": -0.3934978002,
+      "paired_ci_upper": 2.3540572376,
+      "win_rate": 0.35,
+      "tie_rate": 0.34,
+      "loss_rate": 0.31
+    },
+    {
+      "algorithm": "greedy_net_earnings",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": -6.9451980723,
+      "paired_ci_lower": -8.8133930565,
+      "paired_ci_upper": -5.077003088,
+      "win_rate": 0.1733333333,
+      "tie_rate": 0.1066666667,
+      "loss_rate": 0.72
+    },
+    {
+      "algorithm": "highest_demand",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": -12.6389161214,
+      "paired_ci_lower": -14.7056697761,
+      "paired_ci_upper": -10.5721624667,
+      "win_rate": 0.1533333333,
+      "tie_rate": 0.02,
+      "loss_rate": 0.8266666667
+    },
+    {
+      "algorithm": "highest_income",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": -16.0422522592,
+      "paired_ci_lower": -18.2374909069,
+      "paired_ci_upper": -13.8470136116,
+      "win_rate": 0.0766666667,
+      "tie_rate": 0.04,
+      "loss_rate": 0.8833333333
+    },
+    {
+      "algorithm": "q_learning",
+      "baseline": "wait_only",
+      "paired_scenarios": 300,
+      "mean_paired_gain": -6.4144437983,
+      "paired_ci_lower": -8.2800756688,
+      "paired_ci_upper": -4.5488119279,
+      "win_rate": 0.2766666667,
+      "tie_rate": 0.1033333333,
+      "loss_rate": 0.62
+    }
+  ],
+  "global_hard_axiom_failures": [],
+  "path_hard_axiom_failures": [],
+  "negative_path_occurrence_count": 40,
+  "configured_driver_revenue_share": 0.6979,
+  "derived_driver_revenue_share": 0.6979058177218093,
+  "v51_comparison_available": true
+}

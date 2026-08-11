@@ -25,9 +25,12 @@ backups/
 *.pkl
 *.pickle
 deliverables/
+_v52_control/
+FAST_FORMAL_*.log
+*.zip
+*.7z
 
 # OS/editor files.
 .DS_Store
 Thumbs.db
 *.log
-

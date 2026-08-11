@@ -1,0 +1,8 @@
+algorithm,scenario_id,path_id,node_occurrences,v_empty,v_full,path_gain,cost_model
+wait_only,212,wait_only__scenario_212,10,0.0,71.27476639838262,71.27476639838262,fare_share
+highest_demand,192,highest_demand__scenario_192,8,0.0,58.956123554938195,58.956123554938195,fare_share
+highest_income,68,highest_income__scenario_68,4,0.0,55.48900924720629,55.48900924720629,fare_share
+greedy_net_earnings,189,greedy_net_earnings__scenario_189,7,0.0,64.46955000178934,64.46955000178934,fare_share
+finite_horizon_value_iteration,118,finite_horizon_value_iteration__scenario_118,17,0.0,72.29172660248851,72.29172660248851,fare_share
+q_learning,179,q_learning__scenario_179,8,0.0,64.86571313761597,64.86571313761597,fare_share
+dqn,212,dqn__scenario_212,10,0.0,71.27476639838262,71.27476639838262,fare_share

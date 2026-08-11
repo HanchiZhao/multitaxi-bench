@@ -1,0 +1,72 @@
+{
+  "status": "DATA LOCK VERIFICATION PASSED",
+  "strict_lock": true,
+  "lock_path": "C:\\Users\\zhaohanchi\\Desktop\\multitaxi-bench-v5.2-preparing-R3-20260811_085959\\data_lock.json",
+  "months": [
+    "2025-01",
+    "2025-02",
+    "2025-03",
+    "2025-04",
+    "2025-05",
+    "2025-06"
+  ],
+  "row_counts": {
+    "yellow_tripdata_2025-01.parquet": 3475226,
+    "yellow_tripdata_2025-02.parquet": 3577543,
+    "yellow_tripdata_2025-03.parquet": 4145257,
+    "yellow_tripdata_2025-04.parquet": 3970553,
+    "yellow_tripdata_2025-05.parquet": 4591845,
+    "yellow_tripdata_2025-06.parquet": 4322960
+  },
+  "verified_files": {
+    "yellow_tripdata_2025-01.parquet": {
+      "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a",
+      "size_bytes": 59158238
+    },
+    "yellow_tripdata_2025-02.parquet": {
+      "sha256": "037cba555a73663f3a51a2c27816e40e3feb364769942bdf122b9da31e377bd3",
+      "size_bytes": 60343086
+    },
+    "yellow_tripdata_2025-03.parquet": {
+      "sha256": "20c4b77cce457b7cfdae77c5069ca7dc91c167f876a41467f4502ab69487a186",
+      "size_bytes": 69964745
+    },
+    "yellow_tripdata_2025-04.parquet": {
+      "sha256": "6f98938de9380a3f85600533816f0dc0e6d9b5b210e485d623952bac599bbe28",
+      "size_bytes": 67352824
+    },
+    "yellow_tripdata_2025-05.parquet": {
+      "sha256": "7ef46bcd0fceee7f8c0bb38a532be05bceefabb512d4bb0b32a7727dd862b15c",
+      "size_bytes": 77837865
+    },
+    "yellow_tripdata_2025-06.parquet": {
+      "sha256": "1bea7f5b09c744414451fa7fef09fbc5a393ffb1621c859be6ba0df23a14e1b6",
+      "size_bytes": 73542954
+    },
+    "taxi_zone_lookup.csv": {
+      "sha256": "de1aa26cf88649a7559b5b9d6069b2004a40bbe68f600a367c15c0615a6c0147",
+      "size_bytes": 10467
+    },
+    "taxi_zones.shp": {
+      "sha256": "70a5ec90bf0b6a4609b0846638e5331fee861830633cf29c4f6ed846d5d4c2ea",
+      "size_bytes": 1586264
+    },
+    "taxi_zones.shx": {
+      "sha256": "830c7309d34c9a617757a3c821f9fc3868c9442a239ea855cd4e49f3b566597c",
+      "size_bytes": 2204
+    },
+    "taxi_zones.dbf": {
+      "sha256": "d57560e494d92ce01cbf4a7f36ab977cecdee11769b9ad2c4499b929def8bb08",
+      "size_bytes": 59927
+    },
+    "taxi_zones.prj": {
+      "sha256": "d1c8390206ce5d557a5908a3a0ce7dd915fbcd12cf73a779b78280bf61cb330c",
+      "size_bytes": 565
+    },
+    "taxi_zones.cpg": {
+      "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824",
+      "size_bytes": 5
+    }
+  },
+  "lookup_location_ids": 265
+}

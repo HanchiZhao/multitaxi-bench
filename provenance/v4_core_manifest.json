@@ -1,8 +1,24 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "baseline_branch": "v5.1-preservation-first",
   "baseline_commit": "a212a445478dde7037ed12de539eb19a9c3f35fe",
-  "description": "Audited V4 operational core retained by MultiTaxi-Bench V5.1. All files except config.py are byte-identical to the V4 snapshot in the baseline commit. config.py contains only the reviewed environment-variable objective override extension with original V4 defaults.",
+  "description": "Audited V4 baseline retained by MultiTaxi-Bench v5.2. Baseline hashes remain unchanged. route_environment.py has one explicitly authorized data-correctness replacement, and month_boundaries.py is its exact shared helper. No policy, learning, accounting, or Shapley implementation is changed.",
+  "authorized_changes": [
+    {
+      "path": "scripts/route_environment.py",
+      "change_type": "AUTHORIZED_DATE_BOUNDARY_REPLACEMENT",
+      "baseline_sha256": "cc81beeb87c34bbc2f7f4b5a452de7076be6809d2d50fcd3e7642ddb10cb5480",
+      "authorized_sha256": "a223679de17b53a4309f9a8d983d4b72295ead2edca09ce7d26e84dc1252d58e",
+      "reason": "Filter pickups to each file's declared half-open month and compute service-day exposure from the union of retained pickup dates."
+    },
+    {
+      "path": "scripts/month_boundaries.py",
+      "change_type": "AUTHORIZED_DATE_BOUNDARY_ADDITION",
+      "baseline_sha256": null,
+      "authorized_sha256": "d6bea8cd745b1cca95dbd75c52e0bb7b8f1d4ec98c99b15dd412a8ae506bb6d8",
+      "reason": "Provide one shared pickup-month definition for environment construction and fare-share calibration."
+    }
+  ],
   "files": [
     {"path": "scripts/__init__.py", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
     {"path": "scripts/ablation_study.py", "sha256": "c630df1b47cd246b0be9e5c7c877cf8827b42a31b945f25d24f837edd6156948"},

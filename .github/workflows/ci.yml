@@ -19,6 +19,8 @@ jobs:
         run: python -m pytest -q
       - name: Verify audited V4 core
         run: python scripts/verify_v4_preservation.py
+      - name: Verify accepted v5.2 release evidence
+        run: python scripts/verify_release_artifacts.py
       - name: Run isolated smoke pipeline
         env:
           MULTITAXI_PYTHON: python

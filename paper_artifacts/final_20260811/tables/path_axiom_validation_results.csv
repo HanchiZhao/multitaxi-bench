@@ -1,0 +1,8 @@
+test,status,statistic,threshold,details,hard_axiom
+Path Efficiency,PASS,3.552713678800501e-13,<=1e-6,sum(phi)=v(full)-v(empty) for each algorithm-conditioned path,True
+Occurrence Identity,PASS,0.0,0 duplicate IDs,"same zone may recur, but algorithm/scenario/path-position IDs remain unique",True
+Repair Feasibility,PASS,0.0,finite and elapsed<=120,"baseline bridges use the preserved V4 route model; horizon truncation is feasible, not a failure",True
+Full-Path Replay Calibration,PASS,1.4210854715202004e-14,<=1e-6,replaying the full occurrence set must reproduce the representative episode under the same cost model,True
+Signed Contribution,INFO,0.625,diagnostic,negative values are legitimate for costly or redundant path occurrences,False
+Same-Zone Context Sensitivity,PASS,1.0,>0 expected,"same zone is not collapsed across algorithms, scenarios, or positions",False
+Path DIM,PASS,3.035202274965478,>=-1e-6,actual +5% revenue perturbation and Shapley recomputation for highest_income occurrence 1; full_value_change=3.035202,True
